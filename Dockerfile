@@ -8,6 +8,8 @@ RUN npm run build
 FROM golang:1.26-alpine AS go-builder
 WORKDIR /app
 RUN apk add --no-cache build-base
+ARG GOPROXY=https://proxy.golang.org,direct
+ENV GOPROXY=${GOPROXY}
 COPY go.mod go.sum ./
 RUN go mod download
 COPY cmd/ ./cmd/
