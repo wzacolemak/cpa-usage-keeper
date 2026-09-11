@@ -320,3 +320,36 @@ func TestFetchClassifiesOptionalFailuresAndSuccessfulEmptySources(t *testing.T) 
 		}
 	})
 }
+
+// TestFetchPrefersDisplayNameWithoutChangingRouteName 验证 display-name 优先于 name 且不影响其他字段来源。
+func TestFetchPrefersDisplayNameWithoutChangingRouteName(t *testing.T) {
+	// fetcher 默认所有来源成功空列表。
+	fetcher := successfulProviderFetcher()
+	// Gemini entry 同时携带 display-name 与 name，展示名必须胜出。
+	fetcher.geminiResult.Payload = []providerconfig.ProviderKeyConfig{{APIKey: "gemini-key", Name: "Gemini route", DisplayName: "Research Gemini", AuthIndex: "gemini-auth"}}
+	// OpenAI provider 层同时携带 display-name 与 name。
+	fetcher.openAIResult.Payload = []providerconfig.OpenAICompatibilityConfig{{Name: "openai-route-id", DisplayName: "Team OpenAI", APIKeyEntries: []providerconfig.OpenAIApiKeyEntry{{APIKey: "openai-key", AuthIndex: "openai-auth"}}}}
+
+	// 执行七来源归一化。
+	snapshot, err := providermetadata.Fetch(context.Background(), fetcher)
+	if err != nil {
+		t.Fatalf("Fetch returned error: %v", err)
+	}
+	// 只会生成 Gemini 与 OpenAI 两条有效 Credential。
+	if len(snapshot.Credentials) != 2 {
+		t.Fatalf("Credentials = %#v", snapshot.Credentials)
+	}
+	// 按 auth-index 建立断言索引。
+	byIndex := make(map[string]providermetadata.Credential, len(snapshot.Credentials))
+	for _, credential := range snapshot.Credentials {
+		byIndex[credential.AuthIndex] = credential
+	}
+	// Gemini 展示名必须取 display-name。
+	if got := byIndex["gemini-auth"].DisplayName; got != "Research Gemini" {
+		t.Fatalf("gemini display name = %q, want Research Gemini", got)
+	}
+	// OpenAI 展示名必须取 provider display-name。
+	if got := byIndex["openai-auth"].DisplayName; got != "Team OpenAI" {
+		t.Fatalf("openai display name = %q, want Team OpenAI", got)
+	}
+}

@@ -116,6 +116,28 @@ func TestOpenAICompatibilityDoesNotInferDisabledFromExcludedModels(t *testing.T)
 	}
 }
 
+// TestProviderKeyConfigUnmarshalsDisplayName 锁定标准 API Key entry 的 display-name 兼容字段来源。
+func TestProviderKeyConfigUnmarshalsDisplayName(t *testing.T) {
+	var cfg providerconfig.ProviderKeyConfig
+	if err := json.Unmarshal([]byte(`{"api-key":"provider-key","display-name":"Primary Gemini"}`), &cfg); err != nil {
+		t.Fatalf("unmarshal provider key config: %v", err)
+	}
+	if cfg.DisplayName != "Primary Gemini" {
+		t.Fatalf("DisplayName = %q, want Primary Gemini", cfg.DisplayName)
+	}
+}
+
+// TestOpenAICompatibilityConfigUnmarshalsDisplayNameSeparatelyFromName 锁定 display-name 与路由 name 各自独立解码。
+func TestOpenAICompatibilityConfigUnmarshalsDisplayNameSeparatelyFromName(t *testing.T) {
+	var cfg providerconfig.OpenAICompatibilityConfig
+	if err := json.Unmarshal([]byte(`{"name":"route-id","display-name":"Friendly upstream"}`), &cfg); err != nil {
+		t.Fatalf("unmarshal openai compatibility config: %v", err)
+	}
+	if cfg.Name != "route-id" || cfg.DisplayName != "Friendly upstream" {
+		t.Fatalf("unexpected names: %#v", cfg)
+	}
+}
+
 func boolPtr(value bool) *bool {
 	return &value
 }

@@ -68,8 +68,8 @@ func providerKeyCredential(item source, config providerconfig.ProviderKeyConfig)
 	prefix := strings.TrimSpace(config.Prefix)
 	// providerType 只来自 source 常量，不能由 payload 文案推断。
 	providerType := strings.TrimSpace(item.providerType)
-	// displayName 优先使用 CPA name，缺失时使用 source 默认值。
-	displayName := firstNonEmpty(config.Name, item.defaultDisplayName)
+	// displayName 优先使用 CPA display-name，其次 CPA name，缺失时使用 source 默认值。
+	displayName := firstNonEmpty(config.DisplayName, config.Name, item.defaultDisplayName)
 	// authIndex 只来自 CPA auth-index 兼容字段。
 	authIndex := strings.TrimSpace(config.AuthIndex)
 	// baseURL 只来自 CPA 独立 base URL 兼容字段。

@@ -7,14 +7,15 @@ import (
 
 // ProviderKeyConfig 是 gemini/claude/codex/vertex API key 配置的兼容归一化视图，支持 CPA 返回的多种 key 命名。
 type ProviderKeyConfig struct {
-	APIKey    string
-	Prefix    string
-	Name      string
-	BaseURL   string
-	AuthIndex string
-	Priority  *int
-	Disabled  *bool
-	Note      *string
+	APIKey      string
+	Prefix      string
+	Name        string
+	DisplayName string
+	BaseURL     string
+	AuthIndex   string
+	Priority    *int
+	Disabled    *bool
+	Note        *string
 }
 
 func (p *ProviderKeyConfig) UnmarshalJSON(data []byte) error {
@@ -25,6 +26,7 @@ func (p *ProviderKeyConfig) UnmarshalJSON(data []byte) error {
 	p.APIKey = firstString(raw, "apiKey", "api-key", "key")
 	p.Prefix = firstString(raw, "prefix")
 	p.Name = firstString(raw, "name")
+	p.DisplayName = firstString(raw, "display-name", "display_name", "displayName")
 	p.BaseURL = firstString(raw, "base-url", "base_url", "baseURL")
 	p.AuthIndex = firstString(raw, "auth-index", "auth_index", "authIndex")
 	p.Priority = firstInt(raw, "priority")
@@ -41,6 +43,7 @@ func (p *ProviderKeyConfig) UnmarshalJSON(data []byte) error {
 // OpenAICompatibilityConfig 是 openai-compatibility provider 配置的兼容归一化视图，不直接等同于 CPA 原始 JSON。
 type OpenAICompatibilityConfig struct {
 	Name          string
+	DisplayName   string
 	Prefix        string
 	BaseURL       string
 	Priority      *int
@@ -55,6 +58,7 @@ func (c *OpenAICompatibilityConfig) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("decode openai compatibility config: %w", err)
 	}
 	c.Name = firstString(raw, "name", "id")
+	c.DisplayName = firstString(raw, "display-name", "display_name", "displayName")
 	c.Prefix = firstString(raw, "prefix")
 	c.BaseURL = firstString(raw, "base-url", "base_url", "baseURL")
 	c.Priority = firstInt(raw, "priority")
