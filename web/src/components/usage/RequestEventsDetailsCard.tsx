@@ -26,9 +26,15 @@ import {
   IconDownload,
   IconSettings,
 } from '@/components/ui/icons';
-import type { CpaApiKeyOption, UsageEvent, UsageEventRequestLogResponse, UsageSourceFilterOption } from '@/lib/types';
+import type { UsageEvent, UsageEventRequestLogResponse, UsageSourceFilterOption } from '@/lib/types';
 import { useScrollBoundaryContainment } from '@/hooks/useScrollBoundaryContainment';
 import { compareModelNames } from '@/utils/modelSort';
+import {
+  buildUsageModelTooltipLines,
+  getUsageModelDisplay,
+  getUsageModelTooltip,
+  type UsageModelTooltip,
+} from '@/utils/usage/modelDisplay';
 import {
   calculateCacheReadRate,
   formatDurationMs,
@@ -116,7 +122,9 @@ type RequestEventRow = {
   timestampDateLabel: string;
   apiKey: string;
   model: string;
+  responseModel: string;
   modelAlias: string;
+  modelTooltip: UsageModelTooltip;
   reasoningEffort: string;
   speedMode: string;
   speedModeRaw: string;
@@ -177,6 +185,16 @@ type RequestEventTableRowProps = {
   columns: readonly RequestEventColumnDefinition[];
   virtualIndex?: number;
   measureElement?: (node: HTMLTableRowElement | null) => void;
+};
+
+type RequestEventsModelTooltipActions = Pick<ReturnType<typeof usePortalTooltip>,
+  'showOnMouseEnter' | 'hideOnMouseLeave' | 'showOnFocus' | 'hideOnBlur'>;
+
+type RequestEventsModelCellProps = {
+  row: RequestEventRow;
+  tooltipLines: string[];
+  tooltipActions: RequestEventsModelTooltipActions;
+  upstreamResponseLabel: string;
 };
 
 function RequestEventsTokenMetric({
@@ -251,6 +269,54 @@ function RequestEventsCacheMetric({
   );
 }
 
+function RequestEventsModelCell({
+  row,
+  tooltipLines,
+  tooltipActions,
+  upstreamResponseLabel,
+}: RequestEventsModelCellProps) {
+  const cellRef = useRef<HTMLTableCellElement | null>(null);
+
+  useEffect(() => {
+    const cell = cellRef.current;
+    return () => {
+      if (!cell) return;
+      tooltipActions.hideOnMouseLeave(cell);
+      tooltipActions.hideOnBlur(cell);
+    };
+  }, [tooltipActions]);
+
+  const interactive = tooltipLines.length > 0;
+  return (
+    <td
+      ref={cellRef}
+      className={`${styles.modelCell} ${styles.requestEventsStackedCell}`}
+      tabIndex={interactive ? 0 : undefined}
+      aria-label={interactive ? tooltipLines.join('; ') : undefined}
+      onMouseEnter={interactive
+        ? (event) => tooltipActions.showOnMouseEnter(tooltipLines, event.currentTarget)
+        : undefined}
+      onMouseLeave={interactive
+        ? (event) => tooltipActions.hideOnMouseLeave(event.currentTarget)
+        : undefined}
+      onFocus={interactive
+        ? (event) => tooltipActions.showOnFocus(tooltipLines, event.currentTarget)
+        : undefined}
+      onBlur={interactive
+        ? (event) => tooltipActions.hideOnBlur(event.currentTarget)
+        : undefined}
+    >
+      <span className={styles.requestEventsStackedPrimary}>{row.model}</span>
+      {row.responseModel ? (
+        <span className={styles.requestEventsStackedResponse}>
+          <span aria-hidden="true">↳ </span>{upstreamResponseLabel}: {row.responseModel}
+        </span>
+      ) : null}
+      {row.modelAlias ? <span className={styles.requestEventsStackedSecondary}>{row.modelAlias}</span> : null}
+    </td>
+  );
+}
+
 const RequestEventTableRow = React.memo(function RequestEventTableRow({
   row,
   columns,
@@ -275,10 +341,8 @@ export interface RequestEventsDetailsCardProps {
   loading: boolean;
   totalCount: number;
   modelOptions: string[];
-  apiKeyOptions: ReadonlyArray<CpaApiKeyOption>;
   sourceOptions: UsageSourceFilterOption[];
   modelFilter: string;
-  apiKeyFilter: string;
   sourceFilter: string;
   resultFilter: string;
   exportingFormat?: RequestEventExportFormat | null;
@@ -290,7 +354,6 @@ export interface RequestEventsDetailsCardProps {
   visibleColumnIds?: readonly RequestEventColumnId[];
   columnOrder?: readonly RequestEventColumnId[];
   onModelFilterChange: (model: string) => void;
-  onApiKeyFilterChange: (apiKeyId: string) => void;
   onLoadMore?: () => void;
   onSourceFilterChange: (source: string) => void;
   onResultFilterChange: (result: string) => void;
@@ -413,6 +476,19 @@ const buildCacheTooltipLines = (
   formatRequestEventMetricTooltipLine(t('usage_stats.cache_creation_tokens'), row.cacheCreationTokensLabel, t),
 ];
 
+const buildModelTooltipLines = (
+  row: RequestEventRow,
+  t: (key: string, options?: Record<string, string>) => string,
+): string[] => buildUsageModelTooltipLines(
+  row.modelTooltip,
+  {
+    model: t('usage_stats.model_name'),
+    responseModel: t('usage_stats.upstream_response_model'),
+    modelAlias: t('usage_stats.model_alias'),
+  },
+  (label, value) => formatRequestEventMetricTooltipLine(label, value, t),
+);
+
 const parseRequestEndpoint = (rawEndpoint: unknown): { requestType: string; endpoint: string } => {
   const raw = String(rawEndpoint ?? '').trim().replace(/\s+/g, ' ');
   if (!raw) {
@@ -504,10 +580,8 @@ export function RequestEventsDetailsCard({
   loading,
   totalCount,
   modelOptions: backendModelOptions,
-  apiKeyOptions: backendApiKeyOptions,
   sourceOptions: backendSourceOptions,
   modelFilter,
-  apiKeyFilter,
   sourceFilter,
   resultFilter,
   exportingFormat = null,
@@ -519,7 +593,6 @@ export function RequestEventsDetailsCard({
   visibleColumnIds,
   columnOrder,
   onModelFilterChange,
-  onApiKeyFilterChange,
   onSourceFilterChange,
   onLoadMore,
   onResultFilterChange,
@@ -566,10 +639,9 @@ export function RequestEventsDetailsCard({
       const source = String(event.source ?? '').trim() || '-';
       const sourceType = String(event.source_type ?? '').trim();
       const apiKey = String(event.api_key ?? '').trim() || '-';
-      const modelValue = String(event.model ?? '').trim();
-      const model = modelValue || '-';
-      const modelAliasValue = String(event.model_alias ?? '').trim();
-      const modelAlias = modelAliasValue && modelAliasValue !== modelValue ? modelAliasValue : '-';
+      const modelDisplay = getUsageModelDisplay(event.model, event.response_model, event.model_alias);
+      const modelTooltip = getUsageModelTooltip(event.model, event.response_model, event.model_alias);
+      const model = modelDisplay.model;
       const reasoningEffort = String(event.reasoning_effort ?? '').trim() || '-';
       const speedModeRaw = String(event.service_tier ?? '').trim() || '-';
       const responseSpeedModeRaw = String(event.response_service_tier ?? '').trim() || '-';
@@ -609,7 +681,9 @@ export function RequestEventsDetailsCard({
         timestampDateLabel: timestampLabels.date,
         apiKey,
         model,
-        modelAlias,
+        responseModel: modelDisplay.responseModel,
+        modelAlias: modelDisplay.modelAlias,
+        modelTooltip,
         reasoningEffort,
         speedMode,
         speedModeRaw,
@@ -779,11 +853,6 @@ export function RequestEventsDetailsCard({
     ];
   }, [backendModelOptions, modelFilter, t]);
 
-  const apiKeyOptions = useMemo(() => appendSelectedOption([
-    { value: '', label: t('usage_stats.api_key_filter_all') },
-    ...backendApiKeyOptions.map((option) => ({ value: option.id, label: option.label })),
-  ], apiKeyFilter), [apiKeyFilter, backendApiKeyOptions, t]);
-
   const sourceOptions = useMemo(() => {
     const options = [
       { value: ALL_FILTER, label: t('usage_stats.filter_all') },
@@ -819,6 +888,18 @@ export function RequestEventsDetailsCard({
   const effectiveModelFilter = modelOptionSet.has(modelFilter) ? modelFilter : ALL_FILTER;
   const effectiveSourceFilter = sourceOptionSet.has(sourceFilter) ? sourceFilter : ALL_FILTER;
   const effectiveResultFilter = resultOptionSet.has(resultFilter) ? resultFilter : ALL_FILTER;
+
+  const modelTooltipActions = useMemo<RequestEventsModelTooltipActions>(() => ({
+    showOnMouseEnter: handleRequestEventsTooltipMouseEnter,
+    hideOnMouseLeave: handleRequestEventsTooltipMouseLeave,
+    showOnFocus: handleRequestEventsTooltipFocus,
+    hideOnBlur: handleRequestEventsTooltipBlur,
+  }), [
+    handleRequestEventsTooltipBlur,
+    handleRequestEventsTooltipFocus,
+    handleRequestEventsTooltipMouseEnter,
+    handleRequestEventsTooltipMouseLeave,
+  ]);
 
   const columnDefinitions = useMemo<RequestEventColumnDefinition[]>(() => {
     const definitions: RequestEventColumnDefinition[] = [
@@ -864,10 +945,12 @@ export function RequestEventsDetailsCard({
         label: t('usage_stats.model_name'),
         header: <th>{t('usage_stats.model_name')}</th>,
         renderCell: (row) => (
-          <td className={`${styles.modelCell} ${styles.requestEventsStackedCell}`}>
-            <span className={styles.requestEventsStackedPrimary} title={row.model}>{row.model}</span>
-            <span className={styles.requestEventsStackedSecondary} title={row.modelAlias}>{row.modelAlias}</span>
-          </td>
+          <RequestEventsModelCell
+            row={row}
+            tooltipLines={buildModelTooltipLines(row, t)}
+            tooltipActions={modelTooltipActions}
+            upstreamResponseLabel={t('usage_stats.upstream_response_model')}
+          />
         ),
       },
       {
@@ -1077,6 +1160,7 @@ export function RequestEventsDetailsCard({
     handleRequestEventsTooltipMouseEnter,
     handleRequestEventsTooltipMouseLeave,
     latencyHint,
+    modelTooltipActions,
     onRequestLogOpen,
     requestLogAccessEnabled,
     requestLogLoadingEventId,
@@ -1100,14 +1184,12 @@ export function RequestEventsDetailsCard({
 
   const hasActiveFilters =
     modelFilter !== ALL_FILTER ||
-    apiKeyFilter !== '' ||
     sourceFilter !== ALL_FILTER ||
     resultFilter !== ALL_FILTER;
 
 
   const handleClearFilters = () => {
     onModelFilterChange(ALL_FILTER);
-    onApiKeyFilterChange('');
     onSourceFilterChange(ALL_FILTER);
     onResultFilterChange(ALL_FILTER);
   };
@@ -1166,23 +1248,6 @@ export function RequestEventsDetailsCard({
                 }}
                 className={`${styles.requestEventsSelect} ${styles.usagePillControl}`}
                 ariaLabel={t('usage_stats.request_events_filter_model')}
-                fullWidth={false}
-              />
-            </div>
-            <div className={styles.requestEventsFilterItem}>
-              <span className={styles.requestEventsFilterLabel}>
-                {t('usage_stats.api_key_filter')}
-              </span>
-              <Select
-                value={apiKeyFilter}
-                options={apiKeyOptions}
-                onChange={onApiKeyFilterChange}
-                search={{
-                  placeholder: t('usage_stats.request_events_search_api_key'),
-                  noResultsText: t('usage_stats.request_events_no_matching_api_keys'),
-                }}
-                className={`${styles.requestEventsSelect} ${styles.usagePillControl}`}
-                ariaLabel={t('usage_stats.api_key_filter')}
                 fullWidth={false}
               />
             </div>

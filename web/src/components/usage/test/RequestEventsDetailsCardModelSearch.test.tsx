@@ -4,13 +4,12 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import i18n from '@/i18n';
-import { RequestEventsDetailsCard } from '../RequestEventsDetailsCard';
+import { RequestEventsTestCard } from './requestEventsFixtures';
 
 describe('RequestEventsDetailsCard model search', () => {
   let container: HTMLDivElement;
   let root: Root;
   const onModelFilterChange = vi.fn();
-  const onApiKeyFilterChange = vi.fn();
   const onSourceFilterChange = vi.fn();
   const modelOptions = ['claude-sonnet-4', 'gpt-5', 'gpt-5-mini', 'gemini-2.5-pro'];
   const sortedModelOptions = ['gpt-5', 'gpt-5-mini', 'claude-sonnet-4', 'gemini-2.5-pro'];
@@ -23,26 +22,18 @@ describe('RequestEventsDetailsCard model search', () => {
     root = createRoot(container);
     function TestCard() {
       const [modelFilter, setModelFilter] = React.useState('claude-sonnet-4');
-      const [apiKeyFilter, setApiKeyFilter] = React.useState('22');
       const [sourceFilter, setSourceFilter] = React.useState('__all__');
-      return <RequestEventsDetailsCard
+      return <RequestEventsTestCard
         events={[]}
-        loading={false}
-        totalCount={0}
         modelOptions={modelOptions}
-        apiKeyOptions={[{ id: '22', label: 'Production Key' }, { id: '33', label: 'Test Key' }]}
         sourceOptions={[{ value: 'auth-1', label: 'fallback-1', displayName: 'Team source' }, { value: 'auth-2', label: 'Other source' }]}
         modelFilter={modelFilter}
-        apiKeyFilter={apiKeyFilter}
         sourceFilter={sourceFilter}
-        resultFilter="__all__"
         onModelFilterChange={(model) => {
           onModelFilterChange(model);
           setModelFilter(model);
         }}
-        onApiKeyFilterChange={(key) => { onApiKeyFilterChange(key); setApiKeyFilter(key); }}
         onSourceFilterChange={(source) => { onSourceFilterChange(source); setSourceFilter(source); }}
-        onResultFilterChange={() => undefined}
       />;
     }
     await act(async () => root.render(<TestCard />));
@@ -57,7 +48,6 @@ describe('RequestEventsDetailsCard model search', () => {
   const input = () => container.querySelector<HTMLInputElement>('input[role="combobox"][aria-label="Model"]')!;
   const options = () => Array.from(document.querySelectorAll('[role="option"]')).map((node) => node.textContent);
   const openInput = async () => {
-    expect(input()).not.toBeNull();
     await act(async () => input().focus());
     await act(async () => input().click());
     expect(input().getAttribute('aria-expanded')).toBe('true');
@@ -70,13 +60,12 @@ describe('RequestEventsDetailsCard model search', () => {
   };
 
   it('filters names locally without changing the query until a model is selected', async () => {
-    expect(input()).not.toBeNull();
     expect(input().value).toBe('claude-sonnet-4');
     expect(input().getAttribute('aria-expanded')).toBe('false');
     await openInput();
     expect(document.activeElement).toBe(input());
     expect(document.querySelector('[role="listbox"] input')).toBeNull();
-    expect(document.querySelectorAll('input[role="combobox"]')).toHaveLength(3);
+    expect(document.querySelectorAll('input[role="combobox"]')).toHaveLength(2);
     await typeQuery(' GPT-5 ');
     expect(options()).toEqual(['gpt-5', 'gpt-5-mini']);
     expect(onModelFilterChange).not.toHaveBeenCalled();
@@ -123,7 +112,6 @@ describe('RequestEventsDetailsCard model search', () => {
   });
 
   it.each([
-    ['API Key', ' TEST ', 'Test Key', '33', onApiKeyFilterChange],
     ['Source', ' TEAM ', 'Team source', 'auth-1', onSourceFilterChange],
   ] as const)('searches %s display names locally and commits the option ID', async (label, query, displayName, value, onChange) => {
     const control = container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
@@ -136,7 +124,7 @@ describe('RequestEventsDetailsCard model search', () => {
     };
     await type('missing-option');
     expect(options()).toEqual([]);
-    expect(document.body.textContent).toContain(label === 'API Key' ? 'No matching API Keys' : 'No matching sources');
+    expect(document.body.textContent).toContain('No matching sources');
     await type(query);
     expect(options()).toEqual([displayName]);
     expect(onChange).not.toHaveBeenCalled();
@@ -154,13 +142,13 @@ describe('RequestEventsDetailsCard model search', () => {
     expect(onChange).toHaveBeenCalledTimes(1);
   });
 
-  it('orders the filters as Model, API Key, Source, Status', () => {
+  it('only offers Model, Source and Status filters', () => {
     expect(Array.from(container.querySelectorAll('[aria-expanded][aria-label]'))
       .filter((node) => ['Model', 'API Key', 'Source', 'Status'].includes(node.getAttribute('aria-label')!))
-      .map((node) => node.getAttribute('aria-label'))).toEqual(['Model', 'API Key', 'Source', 'Status']);
+      .map((node) => node.getAttribute('aria-label'))).toEqual(['Model', 'Source', 'Status']);
   });
 
-  it.each(['Model', 'API Key', 'Source', 'Status'])('does not open %s from its caption or surrounding space', async (label) => {
+  it.each(['Model', 'Source', 'Status'])('does not open %s from its caption or surrounding space', async (label) => {
     const control = container.querySelector<HTMLInputElement | HTMLButtonElement>(`[aria-label="${label}"][aria-expanded]`)!;
     const caption = Array.from(container.querySelectorAll('span')).find((node) => node.textContent === label)!;
 
@@ -201,7 +189,6 @@ describe('RequestEventsDetailsCard model search', () => {
     }
     await keyDown('Enter', true);
     expect(onModelFilterChange).not.toHaveBeenCalled();
-    expect(input()).not.toBeNull();
     await keyDown('Enter');
     expect(onModelFilterChange).toHaveBeenCalledExactlyOnceWith('gpt-5');
     expect(input().getAttribute('aria-expanded')).toBe('false');

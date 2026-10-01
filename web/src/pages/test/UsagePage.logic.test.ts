@@ -1,8 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { appendUniqueUsageEvents, getBackToCPALinkURL, getCredentialSectionVisibility, getOverviewDisplayLoading, getUsageCustomRangeForTab, getUsageTabOptions, handleUsageEventLoadMoreError, isUsagePageVisible, loadAnalysisSections, loadRequestEventsPreferences, loadUsagePageVersionInfo, normalizeRequestEventsPreferences, normalizeStoredApiKeyFilter, normalizeUsageTabValue, refreshPageData, REQUEST_EVENTS_PREFERENCES_STORAGE_KEY, resolveApiKeyFilterRequestState, runUsageEventRequestLogDownload, sanitizeRequestEventFilters, saveRequestEventsPreferences, scheduleOverviewAutoRefresh, shouldAutoRefreshUsageTab, shouldResetSelectedApiKeyFilter, shouldShowApiKeyFilter, shouldShowRangeControls, shouldShowUpdateCheckButton, getUpdateCheckToastDuration, API_KEY_FILTER_MAX_LENGTH } from '../UsagePage';
+import { appendUniqueUsageEvents, getBackToCPALinkURL, getCredentialSectionVisibility, getOverviewDisplayLoading, getUsageCustomRangeForTab, getUsageTabOptions, handleUsageEventLoadMoreError, isUsagePageVisible, loadAnalysisSections, loadRequestEventsPreferences, loadUsagePageVersionInfo, normalizeRequestEventsPreferences, normalizeStoredApiKeyFilter, normalizeUsageTabValue, refreshPageData, REQUEST_EVENTS_PREFERENCES_STORAGE_KEY, resolveApiKeyFilterRequestState, resolveCredentialTimeZone, runUsageEventRequestLogDownload, sanitizeRequestEventFilters, saveRequestEventsPreferences, scheduleOverviewAutoRefresh, shouldAutoRefreshUsageTab, shouldResetSelectedApiKeyFilter, shouldShowApiKeyFilter, shouldShowRangeControls, shouldShowUpdateCheckButton, getUpdateCheckToastDuration, API_KEY_FILTER_MAX_LENGTH } from '../UsagePage';
 import { REQUEST_EVENT_COLUMN_IDS } from '@/components/usage/RequestEventsDetailsCard';
 import { ApiError } from '@/lib/api';
 import type { UsageFilterWindow, VersionResponse } from '@/lib/types';
+
+describe('resolveCredentialTimeZone', () => {
+  it('uses only current server responses and never a persisted range timezone', () => {
+    expect(resolveCredentialTimeZone(' Asia/Shanghai ', 'UTC')).toBe('Asia/Shanghai');
+    expect(resolveCredentialTimeZone(undefined, 'America/New_York')).toBe('America/New_York');
+    expect(resolveCredentialTimeZone(undefined, undefined)).toBeUndefined();
+  });
+});
 
 describe('appendUniqueUsageEvents', () => {
   it('appends cursor batches without duplicating overlapping event ids', () => {
@@ -543,6 +551,7 @@ describe('UsagePage active tab auto-refresh guard', () => {
 
   it('keeps Overview auto-refresh enabled and does not auto-refresh other tabs', () => {
     expect(shouldAutoRefreshUsageTab({ activeTab: 'overview', eventsPage: 2 })).toBe(true);
+    expect(shouldAutoRefreshUsageTab({ activeTab: 'realtime', eventsPage: 2 })).toBe(true);
     expect(shouldAutoRefreshUsageTab({ activeTab: 'analysis', eventsPage: 1 })).toBe(false);
     expect(shouldAutoRefreshUsageTab({ activeTab: 'ranking', eventsPage: 1 })).toBe(false);
     expect(shouldAutoRefreshUsageTab({ activeTab: 'settings', eventsPage: 1 })).toBe(false);
@@ -628,7 +637,6 @@ describe('UsagePage request event preferences', () => {
     expect(preferences).toEqual({
       version: 9,
       filters: {
-        apiKeyId: '',
         model: 'claude-opus',
         source: 'authidx-source-b',
         result: 'failed',
@@ -650,7 +658,6 @@ describe('UsagePage request event preferences', () => {
     });
 
     expect(preferences.filters).toEqual({
-      apiKeyId: '',
       model: '__all__',
       source: '__all__',
       result: '__all__',
@@ -718,7 +725,6 @@ describe('UsagePage request event preferences', () => {
     expect(stored).toEqual({
       version: 9,
       filters: {
-        apiKeyId: '',
         model: '__all__',
         source: '__all__',
         result: '__all__',
@@ -736,7 +742,6 @@ describe('UsagePage request event preferences', () => {
     saveRequestEventsPreferences({
       version: 9,
       filters: {
-        apiKeyId: '',
         model: '__all__',
         source: '__all__',
         result: '__all__',
@@ -754,7 +759,6 @@ describe('UsagePage request event preferences', () => {
     });
 
     expect(loadRequestEventsPreferences(storage).filters).toEqual({
-      apiKeyId: '',
       model: '__all__',
       source: '__all__',
       result: '__all__',
@@ -763,7 +767,6 @@ describe('UsagePage request event preferences', () => {
     saveRequestEventsPreferences({
       version: 9,
       filters: {
-        apiKeyId: '',
         model: 'gpt-4.1',
         source: 'source-a',
         result: 'success',
@@ -775,7 +778,6 @@ describe('UsagePage request event preferences', () => {
     expect(JSON.parse(storage.value(REQUEST_EVENTS_PREFERENCES_STORAGE_KEY) ?? '')).toEqual({
       version: 9,
       filters: {
-        apiKeyId: '',
         model: 'gpt-4.1',
         source: 'source-a',
         result: 'success',
@@ -788,6 +790,7 @@ describe('UsagePage request event preferences', () => {
 
 for (const [tab, expected] of [
   ['overview', true],
+  ['realtime', false],
   ['analysis', true],
   ['ranking', false],
   ['events', true],
@@ -802,6 +805,7 @@ for (const [tab, expected] of [
 
 for (const [tab, expected] of [
   ['overview', true],
+  ['realtime', true],
   ['analysis', true],
   ['ranking', false],
   ['events', true],
@@ -820,6 +824,7 @@ describe('UsagePage tab labels', () => {
 
     expect(labels).toEqual([
       'translated:usage_stats.tab_overview',
+      'translated:usage_stats.tab_realtime',
       'translated:usage_stats.tab_analysis',
       'translated:usage_stats.tab_ranking',
       'translated:usage_stats.tab_events',
@@ -832,7 +837,7 @@ describe('UsagePage tab labels', () => {
   it('omits Ranking from the CPAMC embedded navigation', () => {
     const values = getUsageTabOptions((key) => key, { includeRanking: false }).map((option) => option.value);
 
-    expect(values).toEqual(['overview', 'analysis', 'events', 'auth-files', 'ai-provider', 'settings']);
+    expect(values).toEqual(['overview', 'realtime', 'analysis', 'events', 'auth-files', 'ai-provider', 'settings']);
   });
 });
 
