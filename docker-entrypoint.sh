@@ -7,7 +7,7 @@ ensure_writable_dir() {
     return
   fi
   mkdir -p "$dir"
-  chown -R app:app "$dir"
+  chown -R root:root "$dir"
 }
 
 work_dir="${WORK_DIR:-./data}"
@@ -29,4 +29,4 @@ case "${LOG_FILE_ENABLED:-true}" in
     ;;
 esac
 
-exec su-exec app "$@"
+exec "$@"
