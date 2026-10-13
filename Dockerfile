@@ -17,7 +17,10 @@ COPY internal/ ./internal/
 COPY --from=web-builder /app/web/dist ./web/dist
 COPY web/static.go ./web/static.go
 ARG VERSION=dev
-RUN CGO_ENABLED=1 GOOS=linux go build -o /out/cpa-usage-keeper ./cmd/server/main.go
+RUN CGO_ENABLED=1 GOOS=linux go build \
+    -ldflags="-s -w -X cpa-usage-keeper/internal/version.Version=${VERSION}" \
+    -o /out/cpa-usage-keeper ./cmd/server/main.go
+
 FROM golang:1.26-bookworm
 WORKDIR /
 RUN mkdir -p /data
