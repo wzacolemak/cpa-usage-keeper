@@ -6,14 +6,20 @@ type ProviderRegistry struct {
 	handlers map[string]ProviderHandler
 }
 
-func NewDefaultProviderRegistry(caller ManagementAPICaller, configs ProviderConfigs) ProviderRegistry {
+func NewDefaultProviderRegistry(caller ManagementClient, configs ProviderConfigs) ProviderRegistry {
+	kimi := NewKimiProvider(caller, configs.Kimi, configs.KimiAI)
 	return NewProviderRegistry(map[string]ProviderHandler{
-		"antigravity": NewAntigravityProvider(caller, configs.Antigravity, configs.AntigravitySubscriptions),
+		"antigravity": NewAntigravityProvider(caller, configs.Antigravity, configs.AntigravitySubscriptions, configs.AntigravityModels),
 		"codex":       NewCodexProvider(caller, configs.Codex),
 		"gemini-cli":  NewGeminiCLIProvider(caller, configs.GeminiCLI, configs.GeminiCLICodeAssist),
 		"claude":      NewClaudeProvider(caller, configs.ClaudeUsage, configs.ClaudeProfile),
-		"kimi":        NewKimiProvider(caller, configs.Kimi),
+		"kimi":        kimi,
+		"kimi-ai":     kimi,
+		"kimi.ai":     kimi,
+		"kimi.com":    kimi,
 		"xai":         NewXAIProvider(caller, configs.XAIWeekly, configs.XAIMonthly),
+		"zcode":       NewZcodeProvider(caller),
+		"zcode-oauth": NewZcodeProvider(caller),
 	})
 }
 

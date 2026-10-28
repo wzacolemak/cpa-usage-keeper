@@ -2,17 +2,26 @@ package cpa
 
 const (
 	cpaManagementAuthFilesEndpoint           = "/v0/management/auth-files"
+	cpaManagementAuthFilesDownloadEndpoint   = "/v0/management/auth-files/download"
 	cpaManagementAuthFilesStatusEndpoint     = "/v0/management/auth-files/status"
+	cpaManagementAuthFilesFieldsEndpoint     = "/v0/management/auth-files/fields"
 	cpaManagementAPIKeysEndpoint             = "/v0/management/api-keys"
 	cpaManagementVertexAPIKeyEndpoint        = "/v0/management/vertex-api-key"
 	cpaManagementGeminiAPIKeyEndpoint        = "/v0/management/gemini-api-key"
 	cpaManagementCodexAPIKeyEndpoint         = "/v0/management/codex-api-key"
 	cpaManagementClaudeAPIKeyEndpoint        = "/v0/management/claude-api-key"
+	cpaManagementMetaAPIKeyEndpoint          = "/v0/management/meta-api-key"
 	cpaManagementAmpcodeEndpoint             = "/v0/management/ampcode"
 	cpaManagementOpenAICompatibilityEndpoint = "/v0/management/openai-compatibility"
 	cpaManagementUsageQueueEndpoint          = "/v0/management/usage-queue"
 	cpaManagementAPICallEndpoint             = "/v0/management/api-call"
+	cpaManagementResetQuotaEndpoint          = "/v0/management/reset-quota"
 	cpaManagementRequestLogByIDEndpoint      = "/v0/management/request-log-by-id"
+	// cpaZcodeSummaryEndpoint 是 CPA zcode 插件自己聚合的用量摘要，属于 CPA 内部路由。
+	cpaZcodeSummaryEndpoint = "/v0/resource/plugins/zcode/summary"
+	// cpaManagementZcodeResetEndpoint 是 zcode 插件的管理路由：宿主对 resource
+	// 路由只转发 GET，程序化消耗重置卡必须走带管理密钥的管理 POST。
+	cpaManagementZcodeResetEndpoint = "/v0/management/zcode/reset"
 	cpaModelsEndpoint                        = "/v1/models"
 
 	cpaManagementRedisNetwork       = "tcp"

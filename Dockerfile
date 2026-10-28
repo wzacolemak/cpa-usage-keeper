@@ -1,15 +1,16 @@
-# syntax=docker/dockerfile:1
-
 FROM node:24-alpine AS web-builder
 WORKDIR /app/web
 COPY web/package.json web/package-lock.json ./
-RUN npm ci
+ARG NPM_REGISTRY=https://registry.npmjs.org/
+RUN npm ci --registry=${NPM_REGISTRY} --no-audit --no-fund
 COPY web/ ./
 RUN npm run build
 
-FROM golang:1.26-alpine AS go-builder
+FROM golang:1.26-bookworm AS go-builder
 WORKDIR /app
-RUN apk add --no-cache build-base
+
+ARG GOPROXY=https://proxy.golang.org,direct
+ENV GOPROXY=${GOPROXY}
 COPY go.mod go.sum ./
 RUN go mod download
 COPY cmd/ ./cmd/
@@ -21,13 +22,9 @@ RUN CGO_ENABLED=1 GOOS=linux go build \
     -ldflags="-s -w -X cpa-usage-keeper/internal/version.Version=${VERSION}" \
     -o /out/cpa-usage-keeper ./cmd/server/main.go
 
-FROM alpine:3.20
+FROM golang:1.26-bookworm
 WORKDIR /
-RUN apk add --no-cache ca-certificates tzdata su-exec \
-	&& addgroup -S app \
-	&& adduser -S -G app app \
-	&& mkdir -p /data \
-	&& chown -R app:app /data
+RUN mkdir -p /data
 COPY --from=go-builder /out/cpa-usage-keeper /app/cpa-usage-keeper
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \

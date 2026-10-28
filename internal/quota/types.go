@@ -11,6 +11,11 @@ type ManagementAPICaller interface {
 	CallManagementAPI(context.Context, apicall.Request) (*apicall.Response, error)
 }
 
+type ManagementClient interface {
+	ManagementAPICaller
+	ResetQuota(context.Context, string) error
+}
+
 type ProviderInput struct {
 	Identity entities.UsageIdentity
 }
@@ -21,8 +26,9 @@ type ProviderOutput struct {
 }
 
 type ProviderResetOutput struct {
-	Code         string `json:"code,omitempty"`
-	WindowsReset int    `json:"windowsReset,omitempty"`
+	Code           string `json:"code,omitempty"`
+	WindowsReset   int    `json:"windowsReset,omitempty"`
+	RecoveryFailed bool   `json:"recoveryFailed,omitempty"`
 }
 
 type ProviderResetter interface {
@@ -71,6 +77,15 @@ type QuotaRow struct {
 	ResetAfterSeconds *int64       `json:"resetAfterSeconds,omitempty"`
 	WindowUsageTokens *int64       `json:"window_usage_tokens,omitempty"`
 	WindowUsageCost   *float64     `json:"window_usage_cost,omitempty"`
+	// ResetCard 是 zcode 窗口的重置卡信息；仅 five_hour/week 窗口携带。
+	ResetCard *QuotaResetCardInfo `json:"resetCard,omitempty"`
+}
+
+// QuotaResetCardInfo 是 QuotaRow 上的 zcode 重置卡摘要，前端据此渲染重置按钮。
+type QuotaResetCardInfo struct {
+	WindowKey string `json:"windowKey"`
+	Count     int    `json:"count"`
+	Earliest  string `json:"earliest,omitempty"`
 }
 
 type AntigravityQuotaBucket struct {
@@ -183,6 +198,8 @@ type AntigravitySubscriptionPayload struct {
 type ClaudeUsageWindow struct {
 	Utilization float64 `json:"utilization,omitempty"`
 	ResetsAt    string  `json:"resetsAt,omitempty"`
+	// 仅历史采样使用；零值 utilization 必须由上游明确给出。
+	HasUtilization bool `json:"-"`
 }
 
 type ClaudeExtraUsage struct {
@@ -193,14 +210,15 @@ type ClaudeExtraUsage struct {
 }
 
 type ClaudeUsagePayload struct {
-	FiveHour          *ClaudeUsageWindow `json:"fiveHour,omitempty"`
-	SevenDay          *ClaudeUsageWindow `json:"sevenDay,omitempty"`
-	SevenDayOAuthApps *ClaudeUsageWindow `json:"sevenDayOauthApps,omitempty"`
-	SevenDayOpus      *ClaudeUsageWindow `json:"sevenDayOpus,omitempty"`
-	SevenDaySonnet    *ClaudeUsageWindow `json:"sevenDaySonnet,omitempty"`
-	SevenDayCowork    *ClaudeUsageWindow `json:"sevenDayCowork,omitempty"`
-	IguanaNecktie     *ClaudeUsageWindow `json:"iguanaNecktie,omitempty"`
-	ExtraUsage        *ClaudeExtraUsage  `json:"extraUsage,omitempty"`
+	ResetGrants       *ClaudeResetGrantStatus `json:"resetGrants,omitempty"`
+	FiveHour          *ClaudeUsageWindow      `json:"fiveHour,omitempty"`
+	SevenDay          *ClaudeUsageWindow      `json:"sevenDay,omitempty"`
+	SevenDayOAuthApps *ClaudeUsageWindow      `json:"sevenDayOauthApps,omitempty"`
+	SevenDayOpus      *ClaudeUsageWindow      `json:"sevenDayOpus,omitempty"`
+	SevenDaySonnet    *ClaudeUsageWindow      `json:"sevenDaySonnet,omitempty"`
+	SevenDayCowork    *ClaudeUsageWindow      `json:"sevenDayCowork,omitempty"`
+	IguanaNecktie     *ClaudeUsageWindow      `json:"iguanaNecktie,omitempty"`
+	ExtraUsage        *ClaudeExtraUsage       `json:"extraUsage,omitempty"`
 }
 
 type ClaudeProfileAccount struct {
@@ -260,8 +278,18 @@ type KimiLimitItem struct {
 }
 
 type KimiUsagePayload struct {
-	Usage  *KimiUsageDetail `json:"usage,omitempty"`
-	Limits []KimiLimitItem  `json:"limits,omitempty"`
+	Usage  *KimiUsageDetail    `json:"usage,omitempty"`
+	Limits []KimiLimitItem     `json:"limits,omitempty"`
+	Usages *KimiAggregateUsage `json:"usages,omitempty"`
+}
+
+type KimiAggregateUsage struct {
+	MonthTotal *KimiUsageRatio `json:"limit_month_total,omitempty"`
+}
+
+type KimiUsageRatio struct {
+	UsedRatio float64 `json:"used_ratio"`
+	ResetTime string  `json:"reset_time,omitempty"`
 }
 
 type XAIMoneyValue struct {
@@ -334,6 +362,46 @@ type KimiResult struct {
 type XAIResult struct {
 	Weekly  *XAIBillingPayload `json:"weekly,omitempty"`
 	Monthly *XAIBillingPayload `json:"monthly,omitempty"`
+}
+
+// ZcodeResult 是 zcode(bigmodel) Coding Plan 的额度结果，直接对应 CPA zcode 插件的 summary 响应。
+type ZcodeResult struct {
+	Summary *ZcodeSummaryPayload `json:"summary,omitempty"`
+}
+
+// ZcodeSummaryPayload 保留插件 summary 中与额度展示相关的字段。
+type ZcodeSummaryPayload struct {
+	LoggedIn bool          `json:"loggedIn"`
+	Account  string        `json:"account,omitempty"`
+	Level    string        `json:"level,omitempty"`
+	Windows  []ZcodeWindow `json:"windows,omitempty"`
+}
+
+// ZcodeWindow 是一个可独立展示的额度窗口；Key 为空表示按月 MCP 类额度。
+type ZcodeWindow struct {
+	Key         string `json:"key,omitempty"`
+	Title       string `json:"title,omitempty"`
+	Description string `json:"description,omitempty"`
+	Unit        string `json:"unit,omitempty"`
+	// Percentage 是上游给的已用百分比（0-100），与 keeper 的 usedPercent 语义一致。
+	Percentage  float64          `json:"percentage"`
+	CurrentText string           `json:"currentText,omitempty"`
+	ResetTime   string           `json:"resetTime,omitempty"`
+	Details     []ZcodeUsageItem `json:"details,omitempty"`
+	// ResetCards 是该窗口可用的重置卡；Count=0 时也下发，前端据此渲染置灰按钮。
+	ResetCards *ZcodeResetCards `json:"resetCards,omitempty"`
+}
+
+// ZcodeResetCards 对应插件 summary 里 windows[].reset_cards。
+type ZcodeResetCards struct {
+	Count    int    `json:"count"`
+	Earliest string `json:"earliest,omitempty"`
+}
+
+// ZcodeUsageItem 是 MCP 月度额度下的子项明细。
+type ZcodeUsageItem struct {
+	Name  string `json:"name,omitempty"`
+	Usage string `json:"usage,omitempty"`
 }
 
 type ProviderHandler interface {

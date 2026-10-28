@@ -13,13 +13,18 @@ import (
 )
 
 type ResetRequest struct {
-	AuthIndex string `json:"auth_index"`
+	AuthIndex      string `json:"auth_index"`
+	GrantID        string `json:"grant_id,omitempty"`
+	OrganizationID string `json:"organization_id,omitempty"`
+	// WindowKey 是 zcode 专用：five_hour | week。
+	WindowKey string `json:"window_key,omitempty"`
 }
 
 type ResetResponse struct {
-	AuthIndex    string `json:"authIndex"`
-	Code         string `json:"code,omitempty"`
-	WindowsReset int    `json:"windowsReset,omitempty"`
+	AuthIndex      string `json:"authIndex"`
+	Code           string `json:"code,omitempty"`
+	WindowsReset   int    `json:"windowsReset,omitempty"`
+	RecoveryFailed bool   `json:"recoveryFailed,omitempty"`
 }
 
 type ResetCreditsRequest struct {
@@ -89,10 +94,40 @@ func (s *Service) Reset(ctx context.Context, request ResetRequest) (ResetRespons
 		return ResetResponse{}, err
 	}
 	resolvedType, handler, ok := s.resolveQuotaHandlerForIdentity(identity)
+	// Claude 弹窗所选 grant 不能在账号类型改变后误走 Codex 消费。
+	if (request.GrantID != "" || request.OrganizationID != "") && (!ok || resolvedType != "claude") {
+		return ResetResponse{AuthIndex: authIndex, Code: "unavailable"}, nil
+	}
+	if ok && resolvedType == "claude" {
+		resetter, supported := handler.(ClaudeResetProvider)
+		if !supported {
+			return ResetResponse{}, ErrUnsupportedType
+		}
+		output, err := resetter.ResetClaude(ctx, ProviderInput{Identity: identity}, request.GrantID, request.OrganizationID)
+		if err != nil {
+			return ResetResponse{}, err
+		}
+		return ResetResponse{AuthIndex: authIndex, Code: output.Code, RecoveryFailed: output.RecoveryFailed}, nil
+	}
+	if ok && (resolvedType == "zcode" || resolvedType == "zcode-oauth") {
+		resetter, supported := handler.(ZcodeResetProvider)
+		if !supported {
+			return ResetResponse{}, ErrUnsupportedType
+		}
+		// zcode 每次消耗一张对应窗口的重置卡，必须显式指定窗口。
+		if !ValidateZcodeWindowKey(request.WindowKey) {
+			return ResetResponse{}, fmt.Errorf("%w: zcode reset requires window_key five_hour|week", ErrValidation)
+		}
+		outcome, err := resetter.ResetZcode(ctx, ProviderInput{Identity: identity}, request.WindowKey)
+		if err != nil {
+			return ResetResponse{}, err
+		}
+		return ResetResponse{AuthIndex: authIndex, Code: outcome.Code}, nil
+	}
 	if !ok || resolvedType != "codex" {
 		return ResetResponse{}, fmt.Errorf("%w: %s", ErrUnsupportedType, normalizeIdentityType(identity.Provider))
 	}
-	// 当前只有 Codex 官方接口暴露 reset credit 消费能力，其它 provider 继续走只读刷新链路。
+	// Codex 沿用现有 reset credit 消费链路。
 	resetter, ok := handler.(ProviderResetter)
 	if !ok {
 		return ResetResponse{}, fmt.Errorf("%w: %s", ErrUnsupportedType, normalizeIdentityType(identity.Provider))
@@ -102,9 +137,10 @@ func (s *Service) Reset(ctx context.Context, request ResetRequest) (ResetRespons
 		return ResetResponse{}, err
 	}
 	return ResetResponse{
-		AuthIndex:    authIndex,
-		Code:         output.Code,
-		WindowsReset: output.WindowsReset,
+		AuthIndex:      authIndex,
+		Code:           output.Code,
+		WindowsReset:   output.WindowsReset,
+		RecoveryFailed: output.RecoveryFailed,
 	}, nil
 }
 

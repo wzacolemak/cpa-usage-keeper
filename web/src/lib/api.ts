@@ -1,4 +1,4 @@
-import { type AnalysisLatencyDiagnostics, type AnalysisResponse, type AuthFilesManagementResponse, type AuthManagedSessionsResponse, type AuthSessionResponse, type CodexQuotaHistoryResponse, type CpaApiKeyDisplayItem, type CpaApiKeyOptionsResponse, type CpaApiKeySettingsResponse, type CpaApiKeysResponse, type ErrorEventsResponse, type OverviewRealtimeBlock, type OverviewRealtimeWindow, type PricingEntry, type PricingResponse, type PricingRulesResponse, type PricingSyncPreviewResponse, type PricingSyncSource, type QuotaAutoRefreshSettings, type ReplacePricingRulesRequest, type StatusResponse, type UpdateCheckResponse, type UsageActivityRequest, type UsageActivityResponse, type UsageEventModelFilterOptionsResponse, type UsageEventRequestLogResponse, type UsageEventSourceFilterOptionsResponse, type UsageRangeRequest, type UsedModelsResponse, type UsageIdentitiesPageResponse, type UsageIdentitiesResponse, type UsageEventsResponse, type UsageIdentity, type UsageIdentityAuthType, type UsageOverviewResponse, type UsageQuotaCacheResponse, type UsageQuotaInspectionStatusResponse, type UsageQuotaRefreshResponse, type UsageQuotaRefreshTaskResponse, type UsageQuotaResetCreditsResponse, type UsageQuotaResetResponse, type VersionResponse } from './types'
+import { type AnalysisLatencyDiagnostics, type AnalysisResponse, type AuthFilesManagementResponse, type AuthManagedSessionsResponse, type AuthSessionResponse, type CodexQuotaHistoryResponse, type CpaApiKeyDisplayItem, type CpaApiKeyOptionsResponse, type CpaApiKeySettingsResponse, type CpaApiKeysResponse, type ErrorEventsResponse, type OverviewRealtimeBlock, type OverviewRealtimeWindow, type PricingEntry, type PricingResponse, type PricingRulesResponse, type PricingSyncPreviewResponse, type PricingSyncSource, type QuotaAutoRefreshSettings, type ReplacePricingRulesRequest, type StatusResponse, type UpdateCheckResponse, type UsageActivityRequest, type UsageActivityResponse, type UsageEventModelFilterOptionsResponse, type UsageEventRequestLogResponse, type UsageEventSourceFilterOptionsResponse, type UsageRangeRequest, type UsedModelsResponse, type UsageIdentitiesPageResponse, type UsageIdentitiesResponse, type UsageEventsResponse, type UsageIdentity, type UsageIdentityAuthType, type UsageOverviewComparisons, type UsageOverviewResponse, type UsageQuotaCacheResponse, type UsageQuotaInspectionStatusResponse, type UsageQuotaRefreshResponse, type UsageQuotaRefreshTaskResponse, type UsageQuotaResetCreditsResponse, type UsageQuotaResetResponse, type VersionResponse } from './types'
 import { isCPAMCEmbed } from '@/embed/cpamcEmbed'
 import { resolveUsageRequestRange } from '@/utils/usage/rangeQuery'
 
@@ -39,45 +39,29 @@ function realtimeBucketSecondsForWindow(window: OverviewRealtimeWindow): number 
   return 30
 }
 
-function realtimeResponseParticleTotal(particles: OverviewRealtimeBlock['response_distribution']['ttft']['particles']): number {
-  return particles.reduce((total, particle) => total + Math.max(1, Number(particle.count) || 0), 0)
-}
-
 function normalizeOverviewRealtimeBlock(
   block: Partial<OverviewRealtimeBlock> & {
     current_usage?: Partial<OverviewRealtimeBlock['current_usage']>;
-    response_distribution?: Partial<OverviewRealtimeBlock['response_distribution']>;
   },
   fallbackWindow?: OverviewRealtimeWindow,
 ): OverviewRealtimeBlock {
   const currentUsage: Partial<OverviewRealtimeBlock['current_usage']> = block.current_usage ?? {}
-  const responseDistribution: Partial<OverviewRealtimeBlock['response_distribution']> = block.response_distribution ?? {}
-  const ttftParticles = responseDistribution.ttft?.particles ?? []
-  const latencyParticles = responseDistribution.latency?.particles ?? []
   const resolvedWindow = block.window ?? fallbackWindow ?? '15m'
   return {
     window: resolvedWindow,
+    insights: block.insights,
     timezone: block.timezone,
     bucket_seconds: block.bucket_seconds ?? realtimeBucketSecondsForWindow(resolvedWindow),
     window_start: block.window_start,
     window_end: block.window_end,
     token_velocity: block.token_velocity ?? [],
-    response_level: block.response_level ?? [],
-    response_distribution: {
-      ttft: {
-        average_line: responseDistribution.ttft?.average_line ?? [],
-        particles: ttftParticles,
-        total_particles: responseDistribution.ttft?.total_particles ?? realtimeResponseParticleTotal(ttftParticles),
-        sampled: responseDistribution.ttft?.sampled ?? false,
-        max_particles: responseDistribution.ttft?.max_particles ?? 1000,
-      },
-      latency: {
-        average_line: responseDistribution.latency?.average_line ?? [],
-        particles: latencyParticles,
-        total_particles: responseDistribution.latency?.total_particles ?? realtimeResponseParticleTotal(latencyParticles),
-        sampled: responseDistribution.latency?.sampled ?? false,
-        max_particles: responseDistribution.latency?.max_particles ?? 1000,
-      },
+    latency_scatter: {
+      points: block.latency_scatter?.points ?? [],
+      total_points: block.latency_scatter?.total_points ?? 0,
+      p95_ttft_ms: block.latency_scatter?.p95_ttft_ms ?? 0,
+      p95_latency_ms: block.latency_scatter?.p95_latency_ms ?? 0,
+      max_ttft_ms: block.latency_scatter?.max_ttft_ms ?? 0,
+      max_latency_ms: block.latency_scatter?.max_latency_ms ?? 0,
     },
     current_usage: {
       models: currentUsage.models ?? [],
@@ -402,6 +386,19 @@ export async function fetchUsageOverview(request: UsageRangeRequest, signal?: Ab
   return response.json()
 }
 
+export async function fetchUsageOverviewComparisons(request: UsageRangeRequest, options: { signal?: AbortSignal; apiKeyId?: string; keyViewer?: boolean } = {}): Promise<UsageOverviewComparisons> {
+  const params = buildUsageRangeParams(request)
+  const selectedAPIKeyId = options.apiKeyId?.trim()
+  if (selectedAPIKeyId) params.set('api_key_id', selectedAPIKeyId)
+  const path = options.keyViewer ? '/key-overview/comparisons' : '/usage/overview/comparisons'
+  const query = params.toString()
+  const response = await apiFetch(`${apiPath(path)}${query ? `?${query}` : ''}`, { signal: options.signal })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load usage overview comparisons: ${response.status}`)
+  }
+  return response.json()
+}
+
 export async function fetchUsageActivity({ request, apiKeyId, signal }: FetchUsageActivityOptions): Promise<UsageActivityResponse> {
   const params = buildUsageActivityParams(request)
   const selectedAPIKeyId = apiKeyId?.trim()
@@ -688,7 +685,7 @@ export async function fetchCodexQuotaHistory(
   const query = params.toString()
   const response = await apiFetch(`${apiPath(`/quota/history/${encodeURIComponent(authIndex)}`)}${query ? `?${query}` : ''}`, { signal })
   if (!response.ok) {
-    await parseApiError(response, `Failed to load Codex quota history: ${response.status}`)
+    await parseApiError(response, `Failed to load quota history: ${response.status}`)
   }
   return response.json()
 }
@@ -698,7 +695,7 @@ export async function deleteCodexQuotaHistoryCycle(authIndex: string, cycleId: n
     method: 'DELETE', signal,
   })
   if (!response.ok) {
-    await parseApiError(response, `Failed to delete Codex quota cycle: ${response.status}`)
+    await parseApiError(response, `Failed to delete quota cycle: ${response.status}`)
   }
 }
 
@@ -738,13 +735,13 @@ export async function startUsageQuotaInspection(signal?: AbortSignal): Promise<U
 }
 
 
-export async function resetUsageQuota(authIndex: string, signal?: AbortSignal): Promise<UsageQuotaResetResponse> {
+export async function resetUsageQuota(authIndex: string, signal?: AbortSignal, grantId?: string, organizationId?: string, windowKey?: string): Promise<UsageQuotaResetResponse> {
   const response = await apiFetch(apiPath('/quota/reset'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ auth_index: authIndex }),
+    body: JSON.stringify({ auth_index: authIndex, ...(grantId ? { grant_id: grantId, organization_id: organizationId } : {}), ...(windowKey ? { window_key: windowKey } : {}) }),
     signal,
   })
   if (!response.ok) {
@@ -757,6 +754,14 @@ export async function fetchUsageQuotaResetCredits(authIndex: string, signal?: Ab
   const response = await apiFetch(apiPath(`/quota/reset-credits/${encodeURIComponent(authIndex)}`), { signal })
   if (!response.ok) {
     await parseApiError(response, `Failed to load quota reset credits: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function fetchClaudeResetGrants(authIndex: string, signal?: AbortSignal): Promise<import('./types').ClaudeResetGrantsResponse> {
+  const response = await apiFetch(apiPath(`/quota/claude-reset-grants/${encodeURIComponent(authIndex)}`), { signal })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load Claude reset grants: ${response.status}`)
   }
   return response.json()
 }
@@ -779,6 +784,50 @@ export async function setAuthFilesDisabled(names: string[], disabled: boolean): 
   })
   if (!response.ok) {
     await parseApiError(response, `Failed to update auth file status: ${response.status}`)
+  }
+  return response.json()
+}
+
+export type CredentialStatusKind = 'auth-file' | 'ai-provider'
+
+export interface CredentialStatusResponse {
+  auth_index: string
+  disabled: boolean
+}
+
+// 认证文件与 AI 供应商共用前端调用形状，由后端按 auth_index 翻译成各自的上游写操作。
+const credentialStatusPathByKind: Record<CredentialStatusKind, string> = {
+  'auth-file': '/auth-files',
+  'ai-provider': '/ai-providers',
+}
+
+export async function setCredentialDisabled(kind: CredentialStatusKind, authIndex: string, disabled: boolean): Promise<CredentialStatusResponse> {
+  const response = await apiFetch(apiPath(`${credentialStatusPathByKind[kind]}/${encodeURIComponent(authIndex)}/status`), {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ disabled }),
+  })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to update credential status: ${response.status}`)
+  }
+  return response.json()
+}
+
+export interface CredentialPriorityResponse {
+  auth_index: string
+  priority: number
+}
+
+export async function setCredentialPriority(kind: CredentialStatusKind, authIndex: string, priority: number): Promise<CredentialPriorityResponse> {
+  const response = await apiFetch(apiPath(`${credentialStatusPathByKind[kind]}/${encodeURIComponent(authIndex)}/priority`), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ priority }),
+  })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to update credential priority: ${response.status}`)
   }
   return response.json()
 }

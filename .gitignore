@@ -1,5 +1,6 @@
 # internal docs
 .dev-docs/
+.agents/
 .claude/
 .codex/
 .worktrees/
@@ -46,3 +47,6 @@ lerna-debug.log*
 *.njsproj
 *.sln
 *.sw?
+
+# one-shot deployment patch scripts (changes already applied in tree)
+patch-keeper-*.py

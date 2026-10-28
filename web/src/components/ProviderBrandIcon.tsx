@@ -1,22 +1,28 @@
 import antigravityIcon from '@/assets/icons/antigravity.svg'
 import claudeIcon from '@/assets/icons/claude.svg'
 import codexIcon from '@/assets/icons/codex.svg'
+import devinIcon from '@/assets/icons/devin.svg'
 import geminiIcon from '@/assets/icons/gemini.svg'
 import grokIcon from '@/assets/icons/grok.svg'
 import kimiIcon from '@/assets/icons/kimi.svg'
+import metaIcon from '@/assets/icons/meta.svg'
 import openaiIcon from '@/assets/icons/openai.svg'
 import vertexIcon from '@/assets/icons/vertex.svg'
+import zcodeIcon from '@/assets/icons/zcode.svg'
 import styles from './ProviderBrandIcon.module.scss'
 
 export const PROVIDER_BRAND_ICON_KEYS = [
   'antigravity',
   'claude',
   'codex',
+  'devin',
   'gemini',
   'kimi',
+  'meta',
   'openai',
   'vertex',
   'xai',
+  'zcode',
 ] as const
 
 export type ProviderBrandIconKey = typeof PROVIDER_BRAND_ICON_KEYS[number]
@@ -33,13 +39,21 @@ const providerBrandIconKeyByType: Readonly<Record<string, ProviderBrandIconKey>>
   antigravity: 'antigravity',
   claude: 'claude',
   codex: 'codex',
+  devin: 'devin',
   gemini: 'gemini',
   'gemini-cli': 'gemini',
   'gemini-interactions': 'gemini',
   kimi: 'kimi',
+  'kimi-ai': 'kimi',
+  'kimi.ai': 'kimi',
+  'kimi.com': 'kimi',
+  meta: 'meta',
   openai: 'openai',
   vertex: 'vertex',
   xai: 'xai',
+  zcode: 'zcode',
+  // zcode Auth File 在 CPA 中的原始 type 是 zcode-oauth，统一复用 z.ai 品牌图标。
+  'zcode-oauth': 'zcode',
 }
 
 // 品牌资源取自 Lobe Icons；统一复用其 Avatar 圆形容器、背景色与缩放比例。
@@ -47,11 +61,14 @@ const providerBrandIconUrlByKey: Readonly<Record<ProviderBrandIconKey, string>> 
   antigravity: antigravityIcon,
   claude: claudeIcon,
   codex: codexIcon,
+  devin: devinIcon,
   gemini: geminiIcon,
   kimi: kimiIcon,
+  meta: metaIcon,
   openai: openaiIcon,
   vertex: vertexIcon,
   xai: grokIcon,
+  zcode: zcodeIcon,
 }
 
 export function providerBrandIconKey(providerType: string | null | undefined): ProviderBrandIconKey | undefined {

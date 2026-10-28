@@ -26,8 +26,8 @@ func openAICompatibilitySource() source {
 		credentials := make([]Credential, 0, len(result.Payload))
 		// 保持 CPA provider 和 entry 顺序，不做显示字段排序。
 		for _, provider := range result.Payload {
-			// displayName 优先使用 provider name，缺失时使用 openai。
-			displayName := firstNonEmpty(provider.Name, item.defaultDisplayName)
+			// displayName 优先使用 provider display-name，其次 provider name，缺失时使用 openai。
+			displayName := firstNonEmpty(provider.DisplayName, provider.Name, item.defaultDisplayName)
 			// prefix 只来自 provider 层独立字段。
 			prefix := strings.TrimSpace(provider.Prefix)
 			// baseURL 只来自 provider 层独立字段。

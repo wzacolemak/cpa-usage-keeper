@@ -65,6 +65,13 @@ func NormalizeQuotaRows(output ProviderOutput) []QuotaRow {
 			return nil
 		}
 		return normalizeXAIQuotaRows(*result)
+	case ZcodeResult:
+		return normalizeZcodeQuotaRows(result)
+	case *ZcodeResult:
+		if result == nil {
+			return nil
+		}
+		return normalizeZcodeQuotaRows(*result)
 	default:
 		return nil
 	}
@@ -436,6 +443,15 @@ func normalizeKimiQuotaRows(result KimiResult) []QuotaRow {
 	if isMeaningfulKimiDetail(result.Usage.Usage) {
 		rows = append(rows, kimiDetailQuotaRow("usage", "summary", "Weekly", result.Usage.Usage))
 	}
+	if aggregate := result.Usage.Usages; aggregate != nil && aggregate.MonthTotal != nil {
+		monthly := aggregate.MonthTotal
+		used := monthly.UsedRatio * 100
+		rows = append(rows, QuotaRow{
+			Key: "usages.limit_month_total", Label: "Monthly", Scope: "summary",
+			Used: floatPtr(used), Limit: floatPtr(100), Remaining: floatPtr(100 - used),
+			UsedPercent: floatPtr(used), ResetAt: monthly.ResetTime,
+		})
+	}
 	return rows
 }
 
@@ -713,4 +729,80 @@ func intPtr(value int64) *int64 {
 
 func boolPtr(value bool) *bool {
 	return &value
+}
+
+// zcodeWindowOrder 固定 zcode 窗口的展示顺序：短周期窗口在前，月度 MCP 额度最后。
+func zcodeWindowOrder(metric string) int {
+	switch metric {
+	case "five_hour":
+		return 0
+	case "week":
+		return 1
+	default:
+		return 2
+	}
+}
+
+// normalizeZcodeQuotaRows 把插件 windows 折算成统一 quota row。
+//
+// zcode 的 percentage 是“已用百分比”，与 keeper 的 usedPercent 同义；
+// 因此直接写入 UsedPercent，进度条会自动按剩余额度展示。
+func normalizeZcodeQuotaRows(result ZcodeResult) []QuotaRow {
+	if result.Summary == nil {
+		return nil
+	}
+	rows := make([]QuotaRow, 0, len(result.Summary.Windows))
+	for index, window := range result.Summary.Windows {
+		// key 为空的窗口（例如 MCP 月度额度）用下标生成稳定 key，避免前端列表冲突。
+		keyName := strings.TrimSpace(window.Key)
+		if keyName == "" {
+			keyName = fmt.Sprintf("window-%d", index+1)
+		}
+		// 插件的 title 已是中文可读标题，优先直接沿用。
+		label := firstNonEmpty(window.Title, window.Key, fmt.Sprintf("Window %d", index+1))
+		rows = append(rows, QuotaRow{
+			Key:   "zcode." + keyName,
+			Label: label,
+			// 用 quota_group 让前端把同组窗口收进一个共享标题块。
+			Scope:  "quota_group",
+			Metric: window.Key,
+			// zcode 的窗口天然按“模型共享 / MCP 工具”两类额度划分，用 group 承载分类标题。
+			GroupKey:         zcodeWindowGroupKey(window.Key),
+			GroupLabel:       zcodeWindowGroupLabel(window.Key),
+			GroupDescription: strings.TrimSpace(window.Description),
+			UsedPercent:      floatPtr(window.Percentage),
+			LimitReached:     boolPtr(window.Percentage >= 100),
+			Allowed:          boolPtr(window.Percentage < 100),
+			ResetAt:          window.ResetTime,
+		})
+		// 补充重置卡信息（插件对 count=0 也会下发；MCP 窗口无此字段）。
+		if window.ResetCards != nil {
+			row := rows[len(rows)-1]
+			row.ResetCard = &QuotaResetCardInfo{WindowKey: keyName, Count: window.ResetCards.Count, Earliest: window.ResetCards.Earliest}
+			rows[len(rows)-1] = row
+		}
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		return zcodeWindowOrder(rows[i].Metric) < zcodeWindowOrder(rows[j].Metric)
+	})
+	return rows
+}
+
+func zcodeWindowGroupKey(key string) string {
+	switch key {
+	case "five_hour", "week":
+		return "zcode-models"
+	default:
+		return "zcode-mcp"
+	}
+}
+
+// zcodeWindowGroupLabel 是组的兜底英文标题；前端会按 key 映射到本地化文案。
+func zcodeWindowGroupLabel(key string) string {
+	switch key {
+	case "five_hour", "week":
+		return "Models"
+	default:
+		return "MCP Tools"
+	}
 }

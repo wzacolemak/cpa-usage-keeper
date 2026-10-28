@@ -14,10 +14,19 @@ type antigravityProvider struct {
 	caller              ManagementAPICaller
 	quotaConfigs        []APICallConfig
 	subscriptionConfigs []APICallConfig
+	modelConfigs        []APICallConfig
 }
 
-func NewAntigravityProvider(caller ManagementAPICaller, quotaConfigs []APICallConfig, subscriptionConfigs []APICallConfig) ProviderHandler {
-	return antigravityProvider{caller: caller, quotaConfigs: quotaConfigs, subscriptionConfigs: subscriptionConfigs}
+// NewAntigravityProvider 构造 antigravity provider。
+//
+// modelConfigs 是可选的第 4 个参数：老调用方（含已有测试）只传前三个时，
+// 就退化为只读 retrieveUserQuotaSummary，不聚合 Gemini 组。
+func NewAntigravityProvider(caller ManagementAPICaller, quotaConfigs []APICallConfig, subscriptionConfigs []APICallConfig, modelConfigs ...[]APICallConfig) ProviderHandler {
+	provider := antigravityProvider{caller: caller, quotaConfigs: quotaConfigs, subscriptionConfigs: subscriptionConfigs}
+	if len(modelConfigs) > 0 {
+		provider.modelConfigs = modelConfigs[0]
+	}
+	return provider
 }
 
 func (p antigravityProvider) Check(ctx context.Context, input ProviderInput) (ProviderOutput, error) {
@@ -32,6 +41,9 @@ func (p antigravityProvider) Check(ctx context.Context, input ProviderInput) (Pr
 	if err != nil {
 		return ProviderOutput{}, err
 	}
+	// retrieveUserQuotaSummary 只返回 Claude/GPT 组；Gemini 组要从按模型的
+	// quotaInfo 聚合，两处合并后才能展示全部模型组。
+	quota.Groups = append(quota.Groups, p.checkModelGroups(ctx, input)...)
 	subscription := p.checkSubscription(ctx, input)
 	return ProviderOutput{Provider: "antigravity", Result: AntigravityResult{Quota: quota, Subscription: subscription}}, nil
 }
@@ -68,6 +80,35 @@ func (p antigravityProvider) checkQuota(ctx context.Context, input ProviderInput
 		return emptyQuota, nil
 	}
 	return nil, lastErr
+}
+
+// checkModelGroups 用 fetchAvailableModels 的逐模型 quotaInfo 聚合成 Gemini 组。
+//
+// summary 接口对当前套餐只返回 Claude/GPT 组，但 Gemini 模型确实有独立额度
+// （5h 窗口、100% 剩余）。这里按 apiProvider 分桶，同分桶内取最小剩余比例，
+// 保证展示的是最紧的那条限制。
+func (p antigravityProvider) checkModelGroups(ctx context.Context, input ProviderInput) []AntigravityQuotaGroup {
+	if len(p.modelConfigs) == 0 {
+		return nil
+	}
+	for _, config := range p.modelConfigs {
+		response, err := p.caller.CallManagementAPI(ctx, apicall.Request{
+			AuthIndex: input.Identity.Identity,
+			Method:    config.Method,
+			URL:       config.URL,
+			Header:    copyHeaders(config.Headers),
+			Data:      map[string]string{"project": *input.Identity.ProjectID},
+		})
+		if err != nil {
+			continue
+		}
+		groups, err := parseAntigravityModelQuotaGroups(response)
+		if err != nil || len(groups) == 0 {
+			continue
+		}
+		return groups
+	}
+	return nil
 }
 
 func (p antigravityProvider) checkSubscription(ctx context.Context, input ProviderInput) *AntigravitySubscriptionPayload {

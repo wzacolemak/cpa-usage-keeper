@@ -24,6 +24,8 @@ const (
 	// CodexRateLimitResetCreditsURL 返回当前账号每次可用 reset credit 及其过期时间。
 	CodexRateLimitResetCreditsURL = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits"
 
+	CodexSubscriptionsURL = "https://chatgpt.com/backend-api/subscriptions"
+
 	// xaiGrokClientVersion 与 CPA 当前 Grok CLI chat-proxy 请求保持一致。
 	xaiGrokClientVersion = "0.2.93"
 )
@@ -42,13 +44,19 @@ type APICallConfig struct {
 
 type ProviderConfigs struct {
 	Antigravity              []APICallConfig
+	// AntigravitySubscriptions 走 loadCodeAssist 读套餐等级。
 	AntigravitySubscriptions []APICallConfig
+	// AntigravityModels 读按模型的 remainingFraction + resetTime。
+	// retrieveUserQuotaSummary 只返回 Claude/GPT 组；Gemini 组只能从逐模型接口拿，
+	// 且需要 resetTime 才能区分 5 小时窗口与每周窗口（见 antigravity_models.go 顶部依据）。
+	AntigravityModels []APICallConfig
 	Codex                    APICallConfig
 	GeminiCLI                APICallConfig
 	GeminiCLICodeAssist      APICallConfig
 	ClaudeUsage              APICallConfig
 	ClaudeProfile            APICallConfig
 	Kimi                     APICallConfig
+	KimiAI                   APICallConfig
 	XAIWeekly                APICallConfig
 	XAIMonthly               APICallConfig
 }
@@ -84,6 +92,35 @@ func DefaultProviderConfigs() ProviderConfigs {
 				},
 			},
 		},
+		AntigravityModels: []APICallConfig{
+			{
+				Method: "POST",
+				URL:    "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota",
+				Headers: map[string]string{
+					"Authorization": "Bearer $TOKEN$",
+					"Content-Type":  "application/json",
+					"User-Agent":    "antigravity/cli/1.0.13 (aidev_client; os_type=darwin; arch=arm64)",
+				},
+			},
+			{
+				Method: "POST",
+				URL:    "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
+				Headers: map[string]string{
+					"Authorization": "Bearer $TOKEN$",
+					"Content-Type":  "application/json",
+					"User-Agent":    "antigravity/cli/1.0.13 (aidev_client; os_type=darwin; arch=arm64)",
+				},
+			},
+			{
+				Method: "POST",
+				URL:    "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
+				Headers: map[string]string{
+					"Authorization": "Bearer $TOKEN$",
+					"Content-Type":  "application/json",
+					"User-Agent":    "antigravity/cli/1.0.13 (aidev_client; os_type=darwin; arch=arm64)",
+				},
+			},
+		},
 		AntigravitySubscriptions: []APICallConfig{
 			{
 				Method: "POST",
@@ -110,7 +147,7 @@ func DefaultProviderConfigs() ProviderConfigs {
 			Headers: map[string]string{
 				"Authorization": "Bearer $TOKEN$",
 				"Content-Type":  "application/json",
-				"User-Agent":    "codex_cli_rs/0.76.0 (Debian 13.0.0; x86_64) WindowsTerminal",
+				"User-Agent":    "Codex Desktop/0.160.1 (Mac OS 27.0.1; arm64) unknown (Codex Desktop; 26.930.61225)",
 			},
 		},
 		GeminiCLI: APICallConfig{
@@ -131,11 +168,12 @@ func DefaultProviderConfigs() ProviderConfigs {
 		},
 		ClaudeUsage: APICallConfig{
 			Method: "GET",
-			URL:    "https://api.anthropic.com/api/oauth/usage",
+			URL:    "https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1",
 			Headers: map[string]string{
 				"Authorization":  "Bearer $TOKEN$",
 				"Content-Type":   "application/json",
 				"anthropic-beta": "oauth-2025-04-20",
+				"User-Agent":     "claude-cli/2.1.280 (external, cli)",
 			},
 		},
 		ClaudeProfile: APICallConfig{
@@ -145,11 +183,19 @@ func DefaultProviderConfigs() ProviderConfigs {
 				"Authorization":  "Bearer $TOKEN$",
 				"Content-Type":   "application/json",
 				"anthropic-beta": "oauth-2025-04-20",
+				"User-Agent":     "claude-cli/2.1.280 (external, cli)",
 			},
 		},
 		Kimi: APICallConfig{
 			Method: "GET",
 			URL:    "https://api.kimi.com/coding/v1/usages",
+			Headers: map[string]string{
+				"Authorization": "Bearer $TOKEN$",
+			},
+		},
+		KimiAI: APICallConfig{
+			Method: "GET",
+			URL:    "https://api.kimi.ai/coding/v1/usages",
 			Headers: map[string]string{
 				"Authorization": "Bearer $TOKEN$",
 			},
@@ -179,9 +225,10 @@ func xaiRequestHeaders() map[string]string {
 }
 
 func (c ProviderConfigs) APICallTemplates() []APICallConfig {
-	templates := make([]APICallConfig, 0, len(c.Antigravity)+len(c.AntigravitySubscriptions)+8)
+	templates := make([]APICallConfig, 0, len(c.Antigravity)+len(c.AntigravitySubscriptions)+len(c.AntigravityModels)+9)
 	templates = append(templates, c.Antigravity...)
 	templates = append(templates, c.AntigravitySubscriptions...)
+	templates = append(templates, c.AntigravityModels...)
 	templates = append(templates,
 		c.Codex,
 		c.GeminiCLI,
@@ -189,6 +236,7 @@ func (c ProviderConfigs) APICallTemplates() []APICallConfig {
 		c.ClaudeUsage,
 		c.ClaudeProfile,
 		c.Kimi,
+		c.KimiAI,
 		c.XAIWeekly,
 		c.XAIMonthly,
 	)
