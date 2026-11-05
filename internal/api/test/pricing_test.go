@@ -11,6 +11,7 @@ import (
 
 	. "cpa-usage-keeper/internal/api"
 	"cpa-usage-keeper/internal/entities"
+	"cpa-usage-keeper/internal/pricing"
 	"cpa-usage-keeper/internal/service"
 	servicedto "cpa-usage-keeper/internal/service/dto"
 )
@@ -28,6 +29,7 @@ type pricingStub struct {
 	lastRules     *servicedto.ReplacePricingRulesInput
 	deleted       string
 	err           error
+	timeWindows   pricing.TimeWindowConfig
 }
 
 type pricingTimeoutError struct{}
@@ -396,4 +398,12 @@ func TestDeletePricingRoute(t *testing.T) {
 	if provider.deleted != "openai/gpt-4.1" {
 		t.Fatalf("expected model to be deleted, got %q", provider.deleted)
 	}
+}
+
+func (s pricingStub) GetPricingTimeWindows(context.Context) (pricing.TimeWindowConfig, error) {
+	return s.timeWindows, s.err
+}
+
+func (s pricingStub) UpdatePricingTimeWindows(_ context.Context, config pricing.TimeWindowConfig) (pricing.TimeWindowConfig, error) {
+	return config, s.err
 }

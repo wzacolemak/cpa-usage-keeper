@@ -31,6 +31,8 @@ type PricingProvider interface {
 	DeletePricing(context.Context, string) error
 	ListPricingRules(context.Context, string) ([]servicedto.PricingRule, error)
 	ReplacePricingRules(context.Context, servicedto.ReplacePricingRulesInput) ([]servicedto.PricingRule, error)
+	GetPricingTimeWindows(context.Context) (pricing.TimeWindowConfig, error)
+	UpdatePricingTimeWindows(context.Context, pricing.TimeWindowConfig) (pricing.TimeWindowConfig, error)
 }
 
 type ModelsFetcher interface {

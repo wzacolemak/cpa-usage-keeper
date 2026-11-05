@@ -19,6 +19,7 @@ const (
 	RuleFieldReasoningEffort
 	RuleFieldEndpoint
 	RuleFieldExecutorType
+	RuleFieldTimeWindow
 	ruleFieldCount
 )
 
@@ -32,6 +33,7 @@ var ruleFieldNames = [...]string{
 	RuleFieldReasoningEffort:     "reasoning_effort",
 	RuleFieldEndpoint:            "endpoint",
 	RuleFieldExecutorType:        "executor_type",
+	RuleFieldTimeWindow:          "time_window",
 }
 
 // ParseRuleField 将用户输入编译为固定枚举，避免任意字符串进入查询构造。
@@ -90,6 +92,8 @@ type UsageDimensions struct {
 	ReasoningEffort     string
 	Endpoint            string
 	ExecutorType        string
+	// TimeWindow 由事件时刻推导（见 Resolver.Calculate），不是请求里带的字段。
+	TimeWindow string
 }
 
 func (d UsageDimensions) Value(field RuleField) string {
@@ -112,6 +116,8 @@ func (d UsageDimensions) Value(field RuleField) string {
 		return d.Endpoint
 	case RuleFieldExecutorType:
 		return d.ExecutorType
+	case RuleFieldTimeWindow:
+		return d.TimeWindow
 	default:
 		return ""
 	}
@@ -127,6 +133,7 @@ func canonicalizeUsageDimensions(dimensions UsageDimensions) UsageDimensions {
 	dimensions.ReasoningEffort = strings.TrimSpace(dimensions.ReasoningEffort)
 	dimensions.Endpoint = strings.TrimSpace(dimensions.Endpoint)
 	dimensions.ExecutorType = strings.TrimSpace(dimensions.ExecutorType)
+	dimensions.TimeWindow = strings.TrimSpace(dimensions.TimeWindow)
 	return dimensions
 }
 

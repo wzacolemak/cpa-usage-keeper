@@ -106,6 +106,17 @@ type Config struct {
 	LoginPassword string
 	// AuthSessionTTL 是登录 session 有效时长。
 	AuthSessionTTL time.Duration
+	// OpencodeGoAPIKey 是 OpenCode Go 订阅的 API key，用于查询其订阅用量。
+	// 该渠道是 CPA config 里的 API key 渠道，不出现在 auth-files 清单里，
+	// 因此额度必须由 Keeper 直接查上游 usage 端点。
+	OpencodeGoAPIKey string
+	// OpencodeGoUsageURL 是 OpenCode Go 的用量查询端点。
+	OpencodeGoUsageURL string
+	// DeepSeekAPIKey 用于查询 DeepSeek 官方账户余额（/user/balance）。
+	// DeepSeek 只有余额接口，没有用量/账单 API。
+	DeepSeekAPIKey string
+	// DeepSeekBalanceURL 是 DeepSeek 余额查询端点。
+	DeepSeekBalanceURL string
 }
 
 type LoadOptions struct {
@@ -300,6 +311,10 @@ func Load(options LoadOptions) (*Config, error) {
 		AuthEnabled:                     authEnabled,
 		LoginPassword:                   strings.TrimSpace(os.Getenv("LOGIN_PASSWORD")),
 		AuthSessionTTL:                  authSessionTTL,
+		OpencodeGoAPIKey:                strings.TrimSpace(os.Getenv("OPENCODE_GO_API_KEY")),
+		OpencodeGoUsageURL:              getString("OPENCODE_GO_USAGE_URL", "https://opencode.ai/zen/go/v1/usage"),
+		DeepSeekAPIKey:                  strings.TrimSpace(os.Getenv("DEEPSEEK_API_KEY")),
+		DeepSeekBalanceURL:              getString("DEEPSEEK_BALANCE_URL", "https://api.deepseek.com/user/balance"),
 	}
 	if appHost := strings.TrimSpace(options.AppHost); appHost != "" {
 		cfg.AppHost = appHost

@@ -47,7 +47,11 @@ func LoadPricingSnapshot(ctx context.Context, db *gorm.DB) (*pricing.Snapshot, e
 			Multiplier: rules[index].Multiplier,
 		})
 	}
-	snapshot, err := pricing.CompileSnapshot(configs)
+	windows, err := LoadPricingTimeWindows(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	snapshot, err := pricing.CompileSnapshot(configs, windows)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidPricingSnapshot, err)
 	}

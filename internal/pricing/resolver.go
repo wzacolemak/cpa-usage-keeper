@@ -1,6 +1,8 @@
 package pricing
 
 import (
+	"time"
+
 	"cpa-usage-keeper/internal/helper"
 )
 
@@ -8,6 +10,15 @@ import (
 type CostSubject struct {
 	Dimensions UsageDimensions
 	Tokens     helper.UsageTokenCostInput
+	// OccurredAt 是该笔用量发生的时刻（事件时间或聚合桶起点）。
+	// 分时段计价用它推导 TimeWindow；零值表示无法确定时刻，此时不做分时段加成。
+	OccurredAt time.Time
+}
+
+// WithOccurredAt 返回带上发生时刻的新 subject，用于分时段计价。
+func (s CostSubject) WithOccurredAt(at time.Time) CostSubject {
+	s.OccurredAt = at
+	return s
 }
 
 func NewCostSubject(dimensions UsageDimensions, tokens helper.UsageTokenCostInput) CostSubject {
@@ -24,6 +35,8 @@ type CostResult struct {
 	MatchedModel   string
 	MatchedBy      string
 	RuleMultiplier float64
+	// TimeWindow 是本次计价命中的时段名，空表示未命中任何时段。
+	TimeWindow string
 }
 
 // Resolver 在创建时固定绑定一个 Snapshot，确保单个响应不会混用新旧价格。
@@ -39,6 +52,10 @@ func (r Resolver) ActiveFields() ActiveFields {
 }
 
 func (r Resolver) Calculate(subject CostSubject) CostResult {
+	// 先按事件时刻推导时段，再据此匹配规则，使 time_window 规则与其他维度规则同构。
+	if r.snapshot != nil && r.snapshot.windows != nil && !subject.OccurredAt.IsZero() {
+		subject.Dimensions.TimeWindow = r.snapshot.windows.WindowAt(subject.OccurredAt)
+	}
 	model, matchedModel, matchedBy, found := r.matchModel(subject.Dimensions)
 	if !found {
 		return CostResult{
@@ -60,6 +77,7 @@ func (r Resolver) Calculate(subject CostSubject) CostResult {
 		MatchedModel:   matchedModel,
 		MatchedBy:      matchedBy,
 		RuleMultiplier: ruleMultiplier,
+		TimeWindow:     subject.Dimensions.TimeWindow,
 	}
 }
 

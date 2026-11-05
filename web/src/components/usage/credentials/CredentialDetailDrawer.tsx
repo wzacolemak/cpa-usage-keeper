@@ -7,6 +7,8 @@ import { ProviderBrandIcon } from '@/components/ProviderBrandIcon'
 import { RequestEventLogModal } from '@/components/usage/RequestEventLogModal'
 import { ApiError, fetchErrorEvents, fetchUsageEvents } from '@/lib/api'
 import type { ErrorEvent, UsageEvent, UsageEventRequestLogResponse } from '@/lib/types'
+import { OpencodeGoQuotaPanel, isOpencodeGoIdentity } from './OpencodeGoQuotaPanel'
+import { DeepSeekBalancePanel, isDeepSeekIdentity } from './DeepSeekBalancePanel'
 import { AuthFileQuotaPanel } from './AuthFileCredentialsSection'
 import { CredentialErrorEventsList } from './CredentialErrorEventsList'
 import { CredentialHealthPanel } from './CredentialHealthPanel'
@@ -564,6 +566,20 @@ export function CredentialDetailDrawer({
               <section className={styles.overviewSection}>
                 <h3>{t('usage_stats.credentials_detail_quota')}</h3>
                 <AuthFileQuotaPanel row={selection.row} quotaUsageMode="current" timeZone={timeZone} />
+              </section>
+            ) : isOpencodeGoIdentity(identity) ? (
+              // OpenCode Go 订阅额度：该渠道是 CPA 的 API key 渠道，额度不走通用额度接口，
+              // 由 Keeper 直连上游 usage 端点，因此单独给一个板块。
+              <section className={styles.overviewSection}>
+                <h3>{t('usage_stats.credentials_detail_quota')}</h3>
+                <OpencodeGoQuotaPanel timeZone={timeZone} />
+              </section>
+            ) : isDeepSeekIdentity(identity) ? (
+              // DeepSeek 官方余额：官方只提供 /user/balance，没有用量 API，
+              // 由 Keeper 用同一把 key 直查，展示账户余额水位。
+              <section className={styles.overviewSection}>
+                <h3>{t('usage_stats.credentials_detail_quota')}</h3>
+                <DeepSeekBalancePanel timeZone={timeZone} />
               </section>
             ) : null}
           </div>

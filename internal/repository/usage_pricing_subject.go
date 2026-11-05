@@ -26,7 +26,7 @@ func UsageEventCostSubject(event entities.UsageEvent) pricing.CostSubject {
 		event.OutputTokens,
 		event.CacheReadTokens,
 		event.CacheCreationTokens,
-	)
+	).WithOccurredAt(event.Timestamp)
 }
 
 func UsageEventRecordCostSubject(record dto.UsageEventRecord) pricing.CostSubject {
@@ -44,7 +44,7 @@ func UsageEventRecordCostSubject(record dto.UsageEventRecord) pricing.CostSubjec
 		record.OutputTokens,
 		record.CacheReadTokens,
 		record.CacheCreationTokens,
-	)
+	).WithOccurredAt(record.Timestamp)
 }
 
 func UsageOverviewHourlyCostSubject(row entities.UsageOverviewHourlyStat) pricing.CostSubject {
@@ -62,9 +62,13 @@ func UsageOverviewHourlyCostSubject(row entities.UsageOverviewHourlyStat) pricin
 		row.OutputTokens,
 		row.CacheReadTokens,
 		row.CacheCreationTokens,
-	)
+	).WithOccurredAt(row.BucketStart)
 }
 
+// UsageOverviewDailyCostSubject 构造日粒度成本主体。
+//
+// 日桶只保留日期，无法还原日内峰谷，因此这里不设置 OccurredAt：分时段倍率不会生效。
+// 需要分时段精确计价的分析视图由上层在启用时段规则时改用小时桶聚合。
 func UsageOverviewDailyCostSubject(row entities.UsageOverviewDailyStat) pricing.CostSubject {
 	return newUsagePricingCostSubject(
 		row.APIGroupKey,

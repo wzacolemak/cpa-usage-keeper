@@ -398,6 +398,11 @@ func BuildAnalysisWithFilter(db *gorm.DB, filter dto.UsageQueryFilter, costResol
 	activeFields := costResolver.ActiveFields()
 	windowMinutes := computeWindowMinutes(filter)
 	bucketByDay := windowMinutes > 24*60
+	// 启用分时段计价时不能走日桶：日汇总只有日期，无法还原日内峰谷。
+	// 小时汇总表保留全量历史，因此这里直接降级为小时桶，保证成本口径一致。
+	if activeFields.Has(pricing.RuleFieldTimeWindow) {
+		bucketByDay = false
+	}
 	if strings.TrimSpace(filter.Range) == "custom" {
 		// Custom 显式粒度与 Overview 保持一致，不能用单日跨度反推 hourly。
 		switch strings.TrimSpace(filter.CustomUnit) {

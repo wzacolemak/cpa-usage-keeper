@@ -73,6 +73,7 @@ const AUTH_FILE_DISPLAY_MODE_STORAGE_KEY = 'cpa.credentials.authFiles.displayMod
 // 提升为共享标题的额度分组；antigravity 按模型组、zcode 按模型/MCP 两类。
 const QUOTA_GROUP_KEYS = new Set([
   'antigravity-gemini-models',
+  'antigravity-gemini-4-argon',
   'antigravity-claude-and-gpt-models',
   'zcode-models',
   'zcode-mcp',
@@ -81,6 +82,7 @@ const QUOTA_GROUP_KEYS = new Set([
 // 上游 group displayName 是英文固定文案；映射到 i18n 键后按当前语言展示。
 const QUOTA_GROUP_LABEL_KEYS: Record<string, string> = {
   'antigravity-gemini-models': 'usage_stats.credentials_quota_group_gemini_models',
+  'antigravity-gemini-4-argon': 'usage_stats.credentials_quota_group_gemini_argon',
   'antigravity-claude-and-gpt-models': 'usage_stats.credentials_quota_group_claude_gpt_models',
   'zcode-models': 'usage_stats.credentials_quota_group_zcode_models',
   'zcode-mcp': 'usage_stats.credentials_quota_group_zcode_mcp',

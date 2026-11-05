@@ -51,10 +51,14 @@ type usageWindowTokenStats struct {
 	OutputTokens        int64  `gorm:"column:output_tokens"`
 	CacheReadTokens     int64  `gorm:"column:cache_read_tokens"`
 	CacheCreationTokens int64  `gorm:"column:cache_creation_tokens"`
+	// PricingBucket 是该行聚合所用的小时桶起点（unix 秒），供分时段计价推导时段。
+	// 未启用分时段计价时为 0，表示不做时段加成。
+	PricingBucket int64 `gorm:"column:pricing_bucket"`
 }
 
 type usageWindowTokenStatsKey struct {
-	dimensions pricing.UsageDimensions
+	dimensions    pricing.UsageDimensions
+	pricingBucket int64
 }
 
 func NewUsageWindowStatsCalculator(_ context.Context, db *gorm.DB, costResolver pricing.Resolver) (*UsageWindowStatsCalculator, error) {
@@ -218,6 +222,23 @@ func sumLongUsageWindowTokenStats(db *gorm.DB, authIndex string, start time.Time
 	return usageWindowTokenStatsValues(merged), nil
 }
 
+// pricingBucketSQL 返回“小时对齐的 unix 秒”表达式，用于在 SQL 内把事件归入整点小时桶。
+//
+// 分时段计价必须以小时桶为聚合粒度，否则高峰与空闲时段的 token 会被合并到同一行，
+// 时段倍率就无法正确落到各自的部分上。表达式只用 SQLite 的 strftime，
+// 它对带时区偏移的 ISO8601 文本会正确换算成 UTC 纪元秒，因此不存在时区错位。
+func pricingBucketSQL(timestampColumn string) string {
+	return fmt.Sprintf("(CAST(strftime('%%s', %s) AS INTEGER) / 3600) * 3600 AS pricing_bucket", timestampColumn)
+}
+
+// pricingBucketTime 把小时桶起点还原为时间；0 表示该行没有桶信息（未启用分时段计价）。
+func pricingBucketTime(bucket int64) time.Time {
+	if bucket <= 0 {
+		return time.Time{}
+	}
+	return time.Unix(bucket, 0)
+}
+
 func sumRawUsageWindowTokenStats(db *gorm.DB, authIndex string, start time.Time, end *time.Time, activeFields pricing.ActiveFields) ([]usageWindowTokenStats, error) {
 	dimensions := UsagePricingDimensionColumns(activeFields)
 	groupDimensions := append([]string{"model_alias", "model"}, dimensions[2:]...)
@@ -228,6 +249,12 @@ func sumRawUsageWindowTokenStats(db *gorm.DB, authIndex string, start time.Time,
 		}
 	}
 	selectClause := strings.Join(selectDimensions, ", ") + ", COALESCE(SUM(total_tokens), 0) AS total_tokens, COALESCE(SUM(input_tokens), 0) AS input_tokens, COALESCE(SUM(output_tokens), 0) AS output_tokens, COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens, COALESCE(SUM(cache_creation_tokens), 0) AS cache_creation_tokens"
+	groupBy := groupDimensions
+	// 启用时段规则时按小时桶分组，使高峰/空闲的 token 各自与自己的倍率相乘。
+	if activeFields.Has(pricing.RuleFieldTimeWindow) {
+		selectClause += ", " + pricingBucketSQL("timestamp")
+		groupBy = append(append([]string(nil), groupDimensions...), "pricing_bucket")
+	}
 	// raw 查询只取 model_alias/model 级汇总字段，避免把大量 usage_events 行读进 Go 内存。
 	query := db.Model(&entities.UsageEvent{}).
 		// SELECT 中只聚合 token/cost 需要的字段，不读取 raw_json 等大字段。
@@ -235,7 +262,7 @@ func sumRawUsageWindowTokenStats(db *gorm.DB, authIndex string, start time.Time,
 		// auth_index 已经是唯一身份维度，这里不再额外按 auth_type 过滤。
 		Where("auth_index = ? AND timestamp >= ?", authIndex, timeutil.FormatStorageTime(start)).
 		// 按 model_alias/model 分组保留现有聚合边界，后续 cost 先按真实 model、再按 alias 回退。
-		Group(strings.Join(groupDimensions, ", "))
+		Group(strings.Join(groupBy, ", "))
 	// 如果调用方传入结束时间，就用半开区间避免边界重复累计。
 	if end != nil {
 		// end 统一格式化为 storage time，确保 SQLite 文本比较稳定。
@@ -259,6 +286,12 @@ func sumHourlyUsageWindowTokenStats(db *gorm.DB, authIndex string, start time.Ti
 	dimensions := UsagePricingDimensionColumns(activeFields)
 	groupDimensions := append([]string{"model_alias", "model"}, dimensions[2:]...)
 	selectClause := strings.Join(dimensions, ", ") + ", COALESCE(SUM(total_tokens), 0) AS total_tokens, COALESCE(SUM(input_tokens), 0) AS input_tokens, COALESCE(SUM(output_tokens), 0) AS output_tokens, COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens, COALESCE(SUM(cache_creation_tokens), 0) AS cache_creation_tokens"
+	groupBy := groupDimensions
+	// 小时表本身已按小时对齐，这里同样按小时桶分组以保留时段边界。
+	if activeFields.Has(pricing.RuleFieldTimeWindow) {
+		selectClause += ", " + pricingBucketSQL("bucket_start")
+		groupBy = append(append([]string(nil), groupDimensions...), "pricing_bucket")
+	}
 	// hourly 查询直接读取 overview 已经维护好的小时增量表。
 	query := db.Model(&entities.UsageOverviewHourlyStat{}).
 		// SELECT 中聚合 token/cost 需要的字段，保持和 raw 查询返回结构一致。
@@ -266,7 +299,7 @@ func sumHourlyUsageWindowTokenStats(db *gorm.DB, authIndex string, start time.Ti
 		// auth_index + bucket_start 范围可以使用现有 hourly auth_bucket 索引。
 		Where("auth_index = ? AND bucket_start >= ? AND bucket_start < ?", authIndex, timeutil.FormatStorageTime(start), timeutil.FormatStorageTime(end)).
 		// 按 model_alias/model 分组保留现有聚合边界，后续 cost 先按真实 model、再按 alias 回退。
-		Group(strings.Join(groupDimensions, ", "))
+		Group(strings.Join(groupBy, ", "))
 	// rows 只承接聚合后的少量 model 行。
 	var rows []usageWindowTokenStats
 	// 执行 hourly 聚合查询。
@@ -297,7 +330,7 @@ func mergeUsageWindowTokenStats(merged map[usageWindowTokenStatsKey]usageWindowT
 			row.ExecutorType,
 			0, 0, 0, 0,
 		).Dimensions
-		key := usageWindowTokenStatsKey{dimensions: dimensions}
+		key := usageWindowTokenStatsKey{dimensions: dimensions, pricingBucket: row.PricingBucket}
 		// 从已有 map 中取出当前 model_alias/model 的累计值。
 		current := merged[key]
 		// 写回规范化后的维度，后续 resolver 也按 trim 后的值查找。
@@ -310,6 +343,7 @@ func mergeUsageWindowTokenStats(merged map[usageWindowTokenStatsKey]usageWindowT
 		current.ReasoningEffort = dimensions.ReasoningEffort
 		current.Endpoint = dimensions.Endpoint
 		current.ExecutorType = dimensions.ExecutorType
+		current.PricingBucket = row.PricingBucket
 		// 累加 total_tokens，用于前端 token 展示。
 		current.TotalTokens += row.TotalTokens
 		// 累加 input_tokens，用于普通输入、缓存读取和缓存写入成本拆分。
@@ -385,7 +419,7 @@ func addUsageWindowTokenStats(stats UsageWindowStats, row usageWindowTokenStats,
 		row.OutputTokens,
 		row.CacheReadTokens,
 		row.CacheCreationTokens,
-	))
+	).WithOccurredAt(pricingBucketTime(row.PricingBucket)))
 	// 兼容极少数只有 total_tokens 的旧行：模型未匹配价格时不能把零成本冒充完整结果。
 	if row.TotalTokens > 0 && result.MatchedModel == "" {
 		result.Available = false

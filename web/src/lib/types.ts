@@ -506,6 +506,29 @@ export interface UsageQuotaResetCard {
   earliest?: string
 }
 
+// OpencodeGoQuotaResponse 是 /quota/opencode-go 的响应：三个滚动窗口的已用百分比。
+export interface OpencodeGoQuotaResponse {
+  usage?: {
+    usage?: Record<string, { status?: string; percent?: number; resetsAt?: string }>
+  }
+}
+
+// DeepSeekBalanceResponse 是 /quota/deepseek-balance 的响应：官方账户余额。
+// DeepSeek 只有余额接口，没有用量/账单 API。
+export interface DeepSeekBalanceAccount {
+  currency: string
+  total_balance: string
+  granted_balance: string
+  topped_up_balance: string
+}
+
+export interface DeepSeekBalanceResponse {
+  available: boolean
+  balances?: DeepSeekBalanceAccount[]
+  low_balance: boolean
+  threshold: number
+}
+
 export interface UsageQuotaCheckResponse {
   id: string
   quota: UsageQuotaRow[]
@@ -930,6 +953,17 @@ export interface ReplacePricingRuleInput {
 export interface PricingRulesResponse {
   model: string
   rules: PricingRule[]
+}
+
+export interface PricingTimeWindowSpec {
+  name: string
+  weekdays: number[]
+  ranges: string[]
+}
+
+export interface PricingTimeWindows {
+  timezone: string
+  windows: PricingTimeWindowSpec[]
 }
 
 export interface ReplacePricingRulesRequest {

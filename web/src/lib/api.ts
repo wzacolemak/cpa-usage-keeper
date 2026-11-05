@@ -1,4 +1,4 @@
-import { type AnalysisLatencyDiagnostics, type AnalysisResponse, type AuthFilesManagementResponse, type AuthManagedSessionsResponse, type AuthSessionResponse, type CodexQuotaHistoryResponse, type CpaApiKeyDisplayItem, type CpaApiKeyOptionsResponse, type CpaApiKeySettingsResponse, type CpaApiKeysResponse, type ErrorEventsResponse, type OverviewRealtimeBlock, type OverviewRealtimeWindow, type PricingEntry, type PricingResponse, type PricingRulesResponse, type PricingSyncPreviewResponse, type PricingSyncSource, type QuotaAutoRefreshSettings, type ReplacePricingRulesRequest, type StatusResponse, type UpdateCheckResponse, type UsageActivityRequest, type UsageActivityResponse, type UsageEventModelFilterOptionsResponse, type UsageEventRequestLogResponse, type UsageEventSourceFilterOptionsResponse, type UsageRangeRequest, type UsedModelsResponse, type UsageIdentitiesPageResponse, type UsageIdentitiesResponse, type UsageEventsResponse, type UsageIdentity, type UsageIdentityAuthType, type UsageOverviewComparisons, type UsageOverviewResponse, type UsageQuotaCacheResponse, type UsageQuotaInspectionStatusResponse, type UsageQuotaRefreshResponse, type UsageQuotaRefreshTaskResponse, type UsageQuotaResetCreditsResponse, type UsageQuotaResetResponse, type VersionResponse } from './types'
+import { type AnalysisLatencyDiagnostics, type AnalysisResponse, type AuthFilesManagementResponse, type AuthManagedSessionsResponse, type AuthSessionResponse, type CodexQuotaHistoryResponse, type CpaApiKeyDisplayItem, type CpaApiKeyOptionsResponse, type CpaApiKeySettingsResponse, type CpaApiKeysResponse, type ErrorEventsResponse, type OpencodeGoQuotaResponse, type OverviewRealtimeBlock, type OverviewRealtimeWindow, type DeepSeekBalanceResponse, type PricingEntry, type PricingResponse, type PricingRulesResponse, type PricingSyncPreviewResponse, type PricingSyncSource, type PricingTimeWindows, type QuotaAutoRefreshSettings, type ReplacePricingRulesRequest, type StatusResponse, type UpdateCheckResponse, type UsageActivityRequest, type UsageActivityResponse, type UsageEventModelFilterOptionsResponse, type UsageEventRequestLogResponse, type UsageEventSourceFilterOptionsResponse, type UsageRangeRequest, type UsedModelsResponse, type UsageIdentitiesPageResponse, type UsageIdentitiesResponse, type UsageEventsResponse, type UsageIdentity, type UsageIdentityAuthType, type UsageOverviewComparisons, type UsageOverviewResponse, type UsageQuotaCacheResponse, type UsageQuotaInspectionStatusResponse, type UsageQuotaRefreshResponse, type UsageQuotaRefreshTaskResponse, type UsageQuotaResetCreditsResponse, type UsageQuotaResetResponse, type VersionResponse } from './types'
 import { isCPAMCEmbed } from '@/embed/cpamcEmbed'
 import { resolveUsageRequestRange } from '@/utils/usage/rangeQuery'
 
@@ -671,6 +671,26 @@ export async function fetchUsageQuotaCache(authIndexes: string[], signal?: Abort
   return response.json()
 }
 
+// fetchOpencodeGoQuota 读取 OpenCode Go 订阅用量。
+// 该订阅是 CPA 的 API key 渠道，不在 auth-files 里，所以走独立端点。
+export async function fetchOpencodeGoQuota(signal?: AbortSignal): Promise<OpencodeGoQuotaResponse> {
+  const response = await apiFetch(apiPath('/quota/opencode-go'), { signal })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load OpenCode Go quota: ${response.status}`)
+  }
+  return response.json()
+}
+
+// fetchDeepSeekBalance 读取 DeepSeek 官方账户余额。
+// DeepSeek 只有 /user/balance（余额），用量/成本仍由 Keeper 从 usage 事件统计。
+export async function fetchDeepSeekBalance(signal?: AbortSignal): Promise<DeepSeekBalanceResponse> {
+  const response = await apiFetch(apiPath('/quota/deepseek-balance'), { signal })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load DeepSeek balance: ${response.status}`)
+  }
+  return response.json()
+}
+
 export interface FetchCodexQuotaHistoryOptions {
   windowRole?: 'primary' | 'secondary'
 }
@@ -1000,6 +1020,32 @@ export async function replacePricingRules(
   })
   if (!response.ok) {
     await parseApiError(response, `Failed to update pricing rules: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function fetchPricingTimeWindows(signal?: AbortSignal): Promise<PricingTimeWindows> {
+  const response = await apiFetch(apiPath('/pricing/time-windows'), { signal, cache: 'no-store' })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to load pricing time windows: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function updatePricingTimeWindows(
+  request: PricingTimeWindows,
+  signal?: AbortSignal,
+): Promise<PricingTimeWindows> {
+  const response = await apiFetch(apiPath('/pricing/time-windows'), {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
+    signal,
+  })
+  if (!response.ok) {
+    await parseApiError(response, `Failed to update pricing time windows: ${response.status}`)
   }
   return response.json()
 }

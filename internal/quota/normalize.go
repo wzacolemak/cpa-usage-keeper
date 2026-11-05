@@ -17,6 +17,7 @@ const (
 	quotaWindowThirtyDaySeconds    int64 = 30 * 24 * 60 * 60
 	quotaWindowAverageMonthSeconds int64 = 365 * 24 * 60 * 60 / 12
 	antigravityGeminiGroupKey            = "antigravity-gemini-models"
+	antigravityGeminiArgonGroupKey       = "antigravity-gemini-4-argon"
 	antigravityClaudeGPTGroupKey         = "antigravity-claude-and-gpt-models"
 )
 
@@ -72,6 +73,13 @@ func NormalizeQuotaRows(output ProviderOutput) []QuotaRow {
 			return nil
 		}
 		return normalizeZcodeQuotaRows(*result)
+	case OpencodeGoResult:
+		return normalizeOpencodeGoQuotaRows(result)
+	case *OpencodeGoResult:
+		if result == nil {
+			return nil
+		}
+		return normalizeOpencodeGoQuotaRows(*result)
 	default:
 		return nil
 	}
@@ -355,6 +363,7 @@ func knownAntigravityQuotaGroupKey(displayName string) (string, bool) {
 	hasGemini := false
 	hasClaude := false
 	hasGPT := false
+	hasArgon := false
 	for _, word := range words {
 		switch word {
 		case "gemini":
@@ -363,9 +372,15 @@ func knownAntigravityQuotaGroupKey(displayName string) (string, bool) {
 			hasClaude = true
 		case "gpt":
 			hasGPT = true
+		case "argon":
+			hasArgon = true
 		}
 	}
 	switch {
+	case hasGemini && hasArgon:
+		// "Gemini 4 Argon" 是官方独立配额组（"Argon quota is separate"），
+		// 不能落进通用 Gemini 组的 key，否则前端会把两张卡并成一张。
+		return antigravityGeminiArgonGroupKey, true
 	case hasGemini && !hasClaude && !hasGPT:
 		return antigravityGeminiGroupKey, true
 	case hasClaude && hasGPT && !hasGemini:

@@ -55,7 +55,7 @@ func TestDefaultProviderConfigsContainsAPICallTemplates(t *testing.T) {
 	}
 
 	for _, config := range append(append(configs.Antigravity, configs.AntigravitySubscriptions...), configs.AntigravityModels...) {
-		if config.Headers["Content-Type"] != "application/json" || config.Headers["User-Agent"] != "antigravity/cli/1.0.13 (aidev_client; os_type=darwin; arch=arm64)" {
+		if config.Headers["Content-Type"] != "application/json" || config.Headers["User-Agent"] != "antigravity/cli/2.9.1 (aidev_client; os_type=darwin; arch=arm64)" {
 			t.Fatalf("unexpected antigravity headers: %+v", config.Headers)
 		}
 	}

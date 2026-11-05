@@ -1,6 +1,8 @@
 export { AiProviderCredentialsSection } from './AiProviderCredentialsSection'
 export { AuthFileCredentialsSection } from './AuthFileCredentialsSection'
 export { CredentialProviderFilterBar } from './CredentialProviderFilterBar'
+export { OpencodeGoQuotaPanel } from './OpencodeGoQuotaPanel'
+export { DeepSeekBalancePanel, isDeepSeekIdentity } from './DeepSeekBalancePanel'
 export { CredentialDetailDrawer } from './CredentialDetailDrawer'
 export { useCredentialsTabData } from './useCredentialsTabData'
 export { CREDENTIALS_PAGE_SIZE } from './credentialViewModels'

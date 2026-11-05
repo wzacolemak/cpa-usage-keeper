@@ -63,6 +63,9 @@ type ProviderConfigs struct {
 
 func DefaultProviderConfigs() ProviderConfigs {
 	return ProviderConfigs{
+		// UA 版本不能低于 2.9.0：Cloud Code 对旧客户端隐藏新模型（如 gemini-4-argon 系列），
+		// 配额接口随之不下发它们的 bucket（实测 1.0.13 无 argon 条目，2.9.1 正常返回）。
+		// 与 CPA 的 antigravityFallbackVersion 保持一致（CPA 动态取最新版，失败兜底 2.9.1）。
 		Antigravity: []APICallConfig{
 			{
 				Method: "POST",
@@ -70,7 +73,7 @@ func DefaultProviderConfigs() ProviderConfigs {
 				Headers: map[string]string{
 					"Authorization": "Bearer $TOKEN$",
 					"Content-Type":  "application/json",
-					"User-Agent":    "antigravity/cli/1.0.13 (aidev_client; os_type=darwin; arch=arm64)",
+					"User-Agent":    "antigravity/cli/2.9.1 (aidev_client; os_type=darwin; arch=arm64)",
 				},
 			},
 			{
@@ -79,7 +82,7 @@ func DefaultProviderConfigs() ProviderConfigs {
 				Headers: map[string]string{
 					"Authorization": "Bearer $TOKEN$",
 					"Content-Type":  "application/json",
-					"User-Agent":    "antigravity/cli/1.0.13 (aidev_client; os_type=darwin; arch=arm64)",
+					"User-Agent":    "antigravity/cli/2.9.1 (aidev_client; os_type=darwin; arch=arm64)",
 				},
 			},
 			{
@@ -88,7 +91,7 @@ func DefaultProviderConfigs() ProviderConfigs {
 				Headers: map[string]string{
 					"Authorization": "Bearer $TOKEN$",
 					"Content-Type":  "application/json",
-					"User-Agent":    "antigravity/cli/1.0.13 (aidev_client; os_type=darwin; arch=arm64)",
+					"User-Agent":    "antigravity/cli/2.9.1 (aidev_client; os_type=darwin; arch=arm64)",
 				},
 			},
 		},
@@ -99,7 +102,7 @@ func DefaultProviderConfigs() ProviderConfigs {
 				Headers: map[string]string{
 					"Authorization": "Bearer $TOKEN$",
 					"Content-Type":  "application/json",
-					"User-Agent":    "antigravity/cli/1.0.13 (aidev_client; os_type=darwin; arch=arm64)",
+					"User-Agent":    "antigravity/cli/2.9.1 (aidev_client; os_type=darwin; arch=arm64)",
 				},
 			},
 			{
@@ -108,7 +111,7 @@ func DefaultProviderConfigs() ProviderConfigs {
 				Headers: map[string]string{
 					"Authorization": "Bearer $TOKEN$",
 					"Content-Type":  "application/json",
-					"User-Agent":    "antigravity/cli/1.0.13 (aidev_client; os_type=darwin; arch=arm64)",
+					"User-Agent":    "antigravity/cli/2.9.1 (aidev_client; os_type=darwin; arch=arm64)",
 				},
 			},
 			{
@@ -117,7 +120,7 @@ func DefaultProviderConfigs() ProviderConfigs {
 				Headers: map[string]string{
 					"Authorization": "Bearer $TOKEN$",
 					"Content-Type":  "application/json",
-					"User-Agent":    "antigravity/cli/1.0.13 (aidev_client; os_type=darwin; arch=arm64)",
+					"User-Agent":    "antigravity/cli/2.9.1 (aidev_client; os_type=darwin; arch=arm64)",
 				},
 			},
 		},
@@ -128,7 +131,7 @@ func DefaultProviderConfigs() ProviderConfigs {
 				Headers: map[string]string{
 					"Authorization": "Bearer $TOKEN$",
 					"Content-Type":  "application/json",
-					"User-Agent":    "antigravity/cli/1.0.13 (aidev_client; os_type=darwin; arch=arm64)",
+					"User-Agent":    "antigravity/cli/2.9.1 (aidev_client; os_type=darwin; arch=arm64)",
 				},
 			},
 			{
@@ -137,7 +140,7 @@ func DefaultProviderConfigs() ProviderConfigs {
 				Headers: map[string]string{
 					"Authorization": "Bearer $TOKEN$",
 					"Content-Type":  "application/json",
-					"User-Agent":    "antigravity/cli/1.0.13 (aidev_client; os_type=darwin; arch=arm64)",
+					"User-Agent":    "antigravity/cli/2.9.1 (aidev_client; os_type=darwin; arch=arm64)",
 				},
 			},
 		},

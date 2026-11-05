@@ -376,6 +376,10 @@ func NewWithConfig(cfg config.Config) (*App, error) {
 				Status: api.StatusRouteConfig{
 					CPAPublicURL:               cfg.CPAPublicURL,
 					CPARequestLogAccessEnabled: cfg.CPARequestLogAccessEnabled,
+					OpencodeGoAPIKey:           cfg.OpencodeGoAPIKey,
+					OpencodeGoUsageURL:         cfg.OpencodeGoUsageURL,
+					DeepSeekAPIKey:             cfg.DeepSeekAPIKey,
+					DeepSeekBalanceURL:         cfg.DeepSeekBalanceURL,
 				},
 			},
 		),

@@ -65,6 +65,8 @@ func TestResolveIdentityUsesExistingFallbackAliases(t *testing.T) {
 		{identity: "aistudio", handlerID: tokenprocessor.HandlerGemini},
 		{identity: "ai-studio", handlerID: tokenprocessor.HandlerGemini},
 		{identity: "antigravity", handlerID: tokenprocessor.HandlerGemini},
+		{identity: "zcode", handlerID: tokenprocessor.HandlerClaude},
+		{identity: "zcode-oauth", handlerID: tokenprocessor.HandlerClaude},
 		{identity: "codex", handlerID: tokenprocessor.HandlerResponsesInclusive},
 		{identity: "xai", handlerID: tokenprocessor.HandlerResponsesInclusive},
 		{identity: "meta", handlerID: tokenprocessor.HandlerResponsesInclusive},
@@ -165,5 +167,35 @@ func TestResolveIdentityDoesNotGuessUndocumentedPrefixes(t *testing.T) {
 	unknown := mustResolveIdentity(t, "", "claude-acme")
 	if unknown.HandlerID() != tokenprocessor.HandlerStrictPassThrough || unknown.EvidenceSource() != tokenprocessor.EvidenceDefault {
 		t.Fatalf("expected undocumented prefix to stay strict default, got handler=%q source=%q", unknown.HandlerID(), unknown.EvidenceSource())
+	}
+}
+
+func TestZcodeIdentityRoutesToClaudeHandlerAndFoldsInput(t *testing.T) {
+	// zcode 事件实际形态（bigmodel anthropic 兼容上游）：executor 缺失为
+	// executorAdapter/空，identity=zcode；Input 不含 cache，Total=Input+Output+cache。
+	values := tokenprocessor.TokenValues{
+		InputTokens:      690,
+		OutputTokens:     546,
+		CachedTokens:     109376,
+		CacheReadTokens:  109376,
+		CacheReadPresent: true,
+		TotalTokens:      110612,
+	}
+	resolution := mustResolveIdentity(t, "executorAdapter", "zcode")
+	if resolution.HandlerID() != tokenprocessor.HandlerClaude {
+		t.Fatalf("expected zcode identity to route to the Claude handler, got %q", resolution.HandlerID())
+	}
+	result := tokenprocessor.Process(values, resolution)
+	if result.Tokens.InputTokens != 110066 {
+		t.Fatalf("expected folded input 690+109376=110066, got %d", result.Tokens.InputTokens)
+	}
+	if result.Tokens.CachedTokens != 109376 {
+		t.Fatalf("expected cached alias to stay equal to cache_read, got %d", result.Tokens.CachedTokens)
+	}
+	if result.Tokens.TotalTokens != 110612 {
+		t.Fatalf("expected provider total 110612 to be preserved, got %d", result.Tokens.TotalTokens)
+	}
+	if result.Tokens.CacheReadTokens != 109376 || result.Tokens.CacheCreationTokens != 0 {
+		t.Fatalf("unexpected cache component rewrite: read=%d creation=%d", result.Tokens.CacheReadTokens, result.Tokens.CacheCreationTokens)
 	}
 }

@@ -78,11 +78,20 @@ func parseAntigravityModelQuotaGroups(response *apicall.Response) ([]Antigravity
 			if quotaInfo == nil {
 				continue
 			}
+			remaining := quotaFractionPtrField(quotaInfo, "remainingFraction", "remaining_fraction")
+			resetTime := stringField(quotaInfo, "resetTime", "reset_time")
+			if remaining == nil && resetTime != "" {
+				// fetchAvailableModels 对已耗尽的模型省略 remainingFraction，而
+				// retrieveUserQuota 同状态返回显式 0；有 resetTime 却无数值按 0
+				// 处理，否则 argon 系列耗尽时会从分组里整组消失。
+				zero := 0.0
+				remaining = &zero
+			}
 			models = append(models, modelQuota{
 				apiProvider: strings.TrimSpace(stringField(modelObject, "apiProvider", "api_provider")),
 				displayName: firstNonEmpty(stringField(modelObject, "displayName", "display_name"), modelName),
-				remaining:   quotaFractionPtrField(quotaInfo, "remainingFraction", "remaining_fraction"),
-				resetTime:   stringField(quotaInfo, "resetTime", "reset_time"),
+				remaining:   remaining,
+				resetTime:   resetTime,
 			})
 		}
 	} else {

@@ -56,7 +56,7 @@ func TestAntigravityProviderUsesProjectIDForQuotaRequest(t *testing.T) {
 	if request.AuthIndex != "ag-auth" || request.Method != "POST" || request.URL != "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary" {
 		t.Fatalf("unexpected api-call request: %+v", request)
 	}
-	if request.Header["Authorization"] != "Bearer $TOKEN$" || request.Header["Content-Type"] != "application/json" || request.Header["User-Agent"] != "antigravity/cli/1.0.13 (aidev_client; os_type=darwin; arch=arm64)" {
+	if request.Header["Authorization"] != "Bearer $TOKEN$" || request.Header["Content-Type"] != "application/json" || request.Header["User-Agent"] != "antigravity/cli/2.9.1 (aidev_client; os_type=darwin; arch=arm64)" {
 		t.Fatalf("unexpected api-call headers: %+v", request.Header)
 	}
 	data, ok := request.Data.(map[string]string)
@@ -67,7 +67,7 @@ func TestAntigravityProviderUsesProjectIDForQuotaRequest(t *testing.T) {
 	if subscriptionRequest.AuthIndex != "ag-auth" || subscriptionRequest.Method != "POST" || subscriptionRequest.URL != "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist" {
 		t.Fatalf("unexpected subscription request: %+v", subscriptionRequest)
 	}
-	if subscriptionRequest.Header["Authorization"] != "Bearer $TOKEN$" || subscriptionRequest.Header["Content-Type"] != "application/json" || subscriptionRequest.Header["User-Agent"] != "antigravity/cli/1.0.13 (aidev_client; os_type=darwin; arch=arm64)" {
+	if subscriptionRequest.Header["Authorization"] != "Bearer $TOKEN$" || subscriptionRequest.Header["Content-Type"] != "application/json" || subscriptionRequest.Header["User-Agent"] != "antigravity/cli/2.9.1 (aidev_client; os_type=darwin; arch=arm64)" {
 		t.Fatalf("unexpected subscription request headers: %+v", subscriptionRequest.Header)
 	}
 	subscriptionData, ok := subscriptionRequest.Data.(map[string]any)

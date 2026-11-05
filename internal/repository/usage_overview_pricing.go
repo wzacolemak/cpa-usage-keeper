@@ -119,12 +119,18 @@ type usageOverviewComparisonProjection struct {
 	CostOutputTokens        int64
 	CostCacheReadTokens     int64
 	CostCacheCreationTokens int64
+	// PricingBucket 是分时段计价用的小时桶起点（unix 秒）；0 表示未启用。
+	PricingBucket int64
 }
 
 func loadUsageOverviewComparisonProjection(query *gorm.DB, filter dto.UsageQueryFilter, start, end time.Time, grain string, activeFields pricing.ActiveFields) ([]usageOverviewComparisonProjection, error) {
 	table := "usage_overview_hourly_stats"
 	if grain == "daily" {
 		table = "usage_overview_daily_stats"
+	}
+	// 启用分时段计价时，日表无法还原日内峰谷，统一改为读小时表保证口径一致。
+	if activeFields.Has(pricing.RuleFieldTimeWindow) {
+		table = "usage_overview_hourly_stats"
 	}
 	dimensions := UsagePricingDimensionColumns(activeFields)
 	if !containsUsageOverviewDimension(dimensions, "api_group_key") {
@@ -139,8 +145,14 @@ func loadUsageOverviewComparisonProjection(query *gorm.DB, filter dto.UsageQuery
 		where += " AND api_group_key = ?"
 		args = append(args, key)
 	}
+	selectColumns := strings.Join(dimensions, ", ")
 	group := strings.Join(dimensions, ", ")
-	sql := fmt.Sprintf("SELECT %s, %s FROM %s WHERE %s GROUP BY %s ORDER BY model ASC, api_group_key ASC", strings.Join(dimensions, ", "), usageOverviewStatProjectionAggregateColumns, table, where, group)
+	// 时段规则需要按小时桶拆分，否则同一模型的高峰与空闲用量会被合并。
+	if activeFields.Has(pricing.RuleFieldTimeWindow) {
+		selectColumns += ", " + pricingBucketSQL("bucket_start")
+		group += ", pricing_bucket"
+	}
+	sql := fmt.Sprintf("SELECT %s, %s FROM %s WHERE %s GROUP BY %s ORDER BY model ASC, api_group_key ASC", selectColumns, usageOverviewStatProjectionAggregateColumns, table, where, group)
 	rows := make([]usageOverviewComparisonProjection, 0)
 	if err := query.Raw(sql, args...).Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("load usage overview %s comparison projection: %w", grain, err)
@@ -189,5 +201,5 @@ func calculateUsageOverviewProjectionCost(costResolver pricing.Resolver, row usa
 		row.CostOutputTokens,
 		row.CostCacheReadTokens,
 		row.CostCacheCreationTokens,
-	))
+	).WithOccurredAt(row.BucketStart))
 }

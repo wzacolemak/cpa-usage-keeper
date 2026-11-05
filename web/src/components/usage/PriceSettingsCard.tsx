@@ -10,6 +10,7 @@ import { useScrollBoundaryContainment } from '@/hooks/useScrollBoundaryContainme
 import { compareModelNames } from '@/utils/modelSort';
 import type { ModelPrice, PricingRule, PricingSaveResult, PricingStyle, PricingSyncSource, PricingSyncPreviewResponse, ReplacePricingRuleInput } from '@/lib/types';
 import { PriceRulesModal } from './pricing/PriceRulesModal';
+import { PriceTimeWindowsPanel } from './pricing/PriceTimeWindowsPanel';
 import { PriceSyncPanel } from './pricing/PriceSyncPanel';
 import { formatDisplayName, priceToInputValue, pricingDraftToModelPrice, pricingStyleOptions } from './pricing/pricingDrafts';
 import styles from '@/pages/UsagePage.module.scss';
@@ -252,6 +253,7 @@ export function PriceSettingsCard({
                 <PriceSyncPanel modelPrices={modelPrices} onSyncPreview={onSyncPreview}
                   onSyncPricesChange={onSyncPricesChange} onNotice={onNotice} />
               )}
+              <PriceTimeWindowsPanel onNotice={(message) => onNotice?.('success', message)} />
               <div className={styles.priceForm}>
                 <div className={styles.formRow}>
                   <div className={`${styles.formField} ${styles.priceFormModelField}`}>

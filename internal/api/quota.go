@@ -362,3 +362,45 @@ func writeQuotaResetError(c *gin.Context, statusCode int, err error) {
 	}
 	c.JSON(statusCode, payload)
 }
+
+// registerOpencodeGoQuotaRoutes 暴露 OpenCode Go 订阅用量。
+//
+// 该订阅以 API key 渠道形式配在 CPA config 里，不出现在 auth-files 清单，
+// 因此 CPA 的通用额度接口查不到；Keeper 用同一把 key 直连上游 usage 端点。
+func registerOpencodeGoQuotaRoutes(router gin.IRoutes, config StatusRouteConfig) {
+	router.GET("/quota/opencode-go", func(c *gin.Context) {
+		if strings.TrimSpace(config.OpencodeGoAPIKey) == "" {
+			// 未配置 key 时明确返回 404，前端据此隐藏该卡片，而不是显示空数据。
+			c.JSON(http.StatusNotFound, gin.H{"error": "opencode go usage is not configured"})
+			return
+		}
+		payload, err := quota.FetchOpencodeGoUsageWithRetry(c.Request.Context(), config.OpencodeGoUsageURL, config.OpencodeGoAPIKey)
+		if err != nil {
+			logrus.WithError(err).Warn("opencode go usage query failed")
+			c.JSON(http.StatusBadGateway, gin.H{"error": "opencode go usage query failed"})
+			return
+		}
+		c.JSON(http.StatusOK, quota.OpencodeGoResult{Usage: payload})
+	})
+}
+
+// registerDeepSeekBalanceRoutes 暴露 DeepSeek 官方账户余额。
+//
+// DeepSeek 只提供 GET /user/balance（余额），没有用量/账单查询 API；
+// 用量统计仍由 Keeper 从 CPA 的 usage 事件里算。
+func registerDeepSeekBalanceRoutes(router gin.IRoutes, config StatusRouteConfig) {
+	router.GET("/quota/deepseek-balance", func(c *gin.Context) {
+		if strings.TrimSpace(config.DeepSeekAPIKey) == "" {
+			// 未配置 key 时返回 404，前端据此隐藏该卡片。
+			c.JSON(http.StatusNotFound, gin.H{"error": "deepseek balance is not configured"})
+			return
+		}
+		result, err := quota.FetchDeepSeekBalanceWithRetry(c.Request.Context(), config.DeepSeekBalanceURL, config.DeepSeekAPIKey)
+		if err != nil {
+			logrus.WithError(err).Warn("deepseek balance query failed")
+			c.JSON(http.StatusBadGateway, gin.H{"error": "deepseek balance query failed"})
+			return
+		}
+		c.JSON(http.StatusOK, result)
+	})
+}

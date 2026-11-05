@@ -106,6 +106,14 @@ var identityAliasDefinitions = []identityAliasDefinition{
 	{alias: "ai-studio", handlerID: HandlerGemini},
 	// antigravity 的历史 Token 规则与 Gemini 一致，但 identity 只是一条 hint。
 	{alias: "antigravity", handlerID: HandlerGemini},
+	// zcode 是 bigmodel GLM Coding Plan（zcode 插件，anthropic 兼容上游）凭证类型：
+	// CPA 用 Claude parser 解析（input 不含 cache read/creation），必须复用 Claude
+	// 折叠规则；缺失时事件落入 strict pass-through，Input 不折叠，而前端展示与
+	// 计价均按「Input 已折叠含 cache」口径做减法，导致 GLM 输入显示 0、缓存占比
+	// 爆表、未缓存输入成本恒为 0。
+	{alias: "zcode", handlerID: HandlerClaude},
+	// zcode-oauth 是该凭证 2026-10-28 前的历史 identity 类型，Token 规则相同。
+	{alias: "zcode-oauth", handlerID: HandlerClaude},
 	// codex identity 保留 Responses 格式的旧规则，但非零 Total 强纠错仍需 executor 合同。
 	{alias: "codex", handlerID: HandlerResponsesInclusive},
 	// xai identity 保留 Responses 格式的旧规则，但非零 Total 强纠错仍需 executor 合同。

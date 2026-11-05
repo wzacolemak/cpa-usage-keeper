@@ -38,13 +38,20 @@ type Snapshot struct {
 	modelsByName map[string]compiledModel
 	modelConfigs []ModelConfig
 	activeFields ActiveFields
+	// windows 是分时段计价使用的时段表；为 nil 表示未启用分时段计价。
+	windows *TimeWindowSet
 }
 
 // CompileSnapshot 规范化并校验完整价格集合，只有整个候选集合安全时才返回快照。
-func CompileSnapshot(configs []ModelConfig) (*Snapshot, error) {
+//
+// windows 为可选参数：传入时段表即启用分时段计价，不传则行为与之前完全一致。
+func CompileSnapshot(configs []ModelConfig, windows ...*TimeWindowSet) (*Snapshot, error) {
 	snapshot := &Snapshot{
 		modelsByName: make(map[string]compiledModel, len(configs)),
 		modelConfigs: make([]ModelConfig, 0, len(configs)),
+	}
+	if len(windows) > 0 {
+		snapshot.windows = windows[0]
 	}
 	for index := range configs {
 		compiled, normalized, activeFields, err := compileModelConfig(configs[index])
@@ -275,4 +282,12 @@ func (s *Snapshot) ActiveFields() ActiveFields {
 		return 0
 	}
 	return s.activeFields
+}
+
+// TimeWindows 返回快照绑定的时段表；未启用分时段计价时返回 nil。
+func (s *Snapshot) TimeWindows() *TimeWindowSet {
+	if s == nil {
+		return nil
+	}
+	return s.windows
 }

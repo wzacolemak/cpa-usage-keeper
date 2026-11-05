@@ -3,6 +3,7 @@ package quota
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"cpa-usage-keeper/internal/cpa/dto/apicall"
@@ -43,7 +44,21 @@ func (p antigravityProvider) Check(ctx context.Context, input ProviderInput) (Pr
 	}
 	// retrieveUserQuotaSummary 只返回 Claude/GPT 组；Gemini 组要从按模型的
 	// quotaInfo 聚合，两处合并后才能展示全部模型组。
-	quota.Groups = append(quota.Groups, p.checkModelGroups(ctx, input)...)
+	// summary 在客户端 UA >= 2.9.0 后已直接返回 Gemini 组（含独立的
+	// Gemini 4 Argon 组）；逐模型聚合只作旧版 summary 的兜底，与 summary
+	// 组同名时丢弃，避免同一分组出现两份、argon 也被错误并进周窗口。
+	for _, group := range p.checkModelGroups(ctx, input) {
+		duplicated := false
+		for _, existing := range quota.Groups {
+			if strings.EqualFold(strings.TrimSpace(group.DisplayName), strings.TrimSpace(existing.DisplayName)) {
+				duplicated = true
+				break
+			}
+		}
+		if !duplicated {
+			quota.Groups = append(quota.Groups, group)
+		}
+	}
 	subscription := p.checkSubscription(ctx, input)
 	return ProviderOutput{Provider: "antigravity", Result: AntigravityResult{Quota: quota, Subscription: subscription}}, nil
 }

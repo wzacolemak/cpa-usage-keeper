@@ -17,11 +17,12 @@ export function PriceRulesHelp() {
   const examplesLabel = t('usage_stats.model_price_rules_help_examples')
   const serviceTierExample = t('usage_stats.model_price_rules_help_service_tier')
   const reasoningEffortExample = t('usage_stats.model_price_rules_help_reasoning_effort')
+  const timeWindowExample = t('usage_stats.model_price_rules_help_time_window')
 
   return (
     <QuestionMarkHelp
       label={t('usage_stats.model_price_rules_help_label')}
-      description={[helpText, examplesLabel, serviceTierExample, reasoningEffortExample].join(' ')}
+      description={[helpText, examplesLabel, serviceTierExample, reasoningEffortExample, timeWindowExample].join(' ')}
       className={styles.help}
       tooltipClassName={styles.helpTooltip}
       tooltipVisibleClassName={styles.helpTooltipVisible}
@@ -32,6 +33,7 @@ export function PriceRulesHelp() {
       <span className={styles.helpExamples}>
         <span>{serviceTierExample}</span>
         <span>{reasoningEffortExample}</span>
+        <span>{timeWindowExample}</span>
       </span>
     </QuestionMarkHelp>
   )

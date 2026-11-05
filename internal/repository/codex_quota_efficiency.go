@@ -64,6 +64,8 @@ type codexQuotaEfficiencyPricingKey struct {
 	ReasoningEffort     string
 	Endpoint            string
 	ExecutorType        string
+	// PricingBucket 是小时桶起点（unix 秒），让分时段倍率作用到正确的用量片段上。
+	PricingBucket int64
 }
 
 // codexQuotaEfficiencyPricingTokens 保留动态计价必需 Token，TotalTokens 仅用于识别旧数据缺价。
@@ -582,6 +584,7 @@ func (a *codexQuotaEfficiencyUsageAccumulator) add(event codexQuotaEfficiencyUsa
 		ReasoningEffort:     event.ReasoningEffort,
 		Endpoint:            event.Endpoint,
 		ExecutorType:        event.ExecutorType,
+		PricingBucket:       event.Timestamp.Truncate(time.Hour).Unix(),
 	}
 	tokens := a.pricingTokens[key]
 	tokens.InputTokens += event.InputTokens
@@ -601,7 +604,7 @@ func (a *codexQuotaEfficiencyUsageAccumulator) finalize(authIndex string, costRe
 			key.APIGroupKey, key.Model, authIndex, key.ModelAlias, key.ServiceTier, key.ResponseServiceTier,
 			key.ReasoningEffort, key.Endpoint, key.ExecutorType,
 			tokens.InputTokens, tokens.OutputTokens, tokens.CacheReadTokens, tokens.CacheCreationTokens,
-		))
+		).WithOccurredAt(pricingBucketTime(key.PricingBucket)))
 		// 极少数旧事件可能只有 total_tokens 而没有计价分项；有 Token 但模型未匹配时仍必须标记缺价。
 		if tokens.TotalTokens > 0 && cost.MatchedModel == "" {
 			cost.Available = false

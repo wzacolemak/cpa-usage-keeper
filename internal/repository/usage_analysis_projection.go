@@ -109,5 +109,5 @@ func calculateAnalysisOverviewProjectionCost(costResolver pricing.Resolver, row 
 		row.OutputTokens,
 		row.CacheReadTokens,
 		row.CacheCreationTokens,
-	))
+	).WithOccurredAt(row.BucketStart))
 }

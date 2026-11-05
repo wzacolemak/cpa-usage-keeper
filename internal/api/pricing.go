@@ -159,6 +159,8 @@ func registerPricingRoutes(router gin.IRoutes, pricingProvider service.PricingPr
 		}
 		c.Status(http.StatusNoContent)
 	})
+
+	registerPricingTimeWindowRoutes(router, pricingProvider)
 }
 
 func writePricingSyncPreviewError(c *gin.Context, err error, sourceName string) {

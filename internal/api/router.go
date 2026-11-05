@@ -48,6 +48,13 @@ type QuotaProvider interface {
 type StatusRouteConfig struct {
 	CPAPublicURL               string
 	CPARequestLogAccessEnabled bool
+	// OpencodeGoAPIKey / OpencodeGoUsageURL 供 /quota/opencode-go 直查订阅用量。
+	// 该订阅是 CPA 的 API key 渠道，不在 auth-files 清单里，CPA 通用额度接口拿不到。
+	OpencodeGoAPIKey   string
+	OpencodeGoUsageURL string
+	// DeepSeekAPIKey / DeepSeekBalanceURL 供 /quota/deepseek-balance 查询官方账户余额。
+	DeepSeekAPIKey     string
+	DeepSeekBalanceURL string
 }
 
 type OptionalProviders struct {
@@ -147,6 +154,8 @@ func NewRouter(
 	registerCPAAPIKeyRoutes(adminProtected, cpaAPIKeyProvider)
 	registerPricingRoutes(adminProtected, pricingProvider)
 	registerQuotaRoutes(adminProtected, quotaProvider)
+	registerOpencodeGoQuotaRoutes(adminProtected, statusConfig)
+	registerDeepSeekBalanceRoutes(adminProtected, statusConfig)
 	if rankingProvider != nil {
 		rankinghttpapi.RegisterRoutes(adminProtected, rankingProvider)
 	}
