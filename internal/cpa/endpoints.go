@@ -18,11 +18,18 @@ const (
 	cpaManagementResetQuotaEndpoint          = "/v0/management/reset-quota"
 	cpaManagementRequestLogByIDEndpoint      = "/v0/management/request-log-by-id"
 	// cpaZcodeSummaryEndpoint 是 CPA zcode 插件自己聚合的用量摘要，属于 CPA 内部路由。
+	//
+	// 插件 ID 由插件文件名决定，运维改过名（zcode -> zcode-oauth）后这里写死就会 404，
+	// 所以真正的端点由 resolveZcodeSummaryEndpoint 在运行时发现；此常量只作为兜底候选。
 	cpaZcodeSummaryEndpoint = "/v0/resource/plugins/zcode/summary"
+	// cpaZcodeSummaryResourceSuffix 是插件声明的 resource 路径，与插件 ID 无关。
+	cpaZcodeSummaryResourceSuffix = "/summary"
+	// cpaManagementPluginsEndpoint 用于发现当前已注册插件的真实 ID。
+	cpaManagementPluginsEndpoint = "/v0/management/plugins"
 	// cpaManagementZcodeResetEndpoint 是 zcode 插件的管理路由：宿主对 resource
 	// 路由只转发 GET，程序化消耗重置卡必须走带管理密钥的管理 POST。
 	cpaManagementZcodeResetEndpoint = "/v0/management/zcode/reset"
-	cpaModelsEndpoint                        = "/v1/models"
+	cpaModelsEndpoint               = "/v1/models"
 
 	cpaManagementRedisNetwork       = "tcp"
 	ManagementRedisDefaultPort      = "8317"

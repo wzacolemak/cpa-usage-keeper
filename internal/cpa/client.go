@@ -27,6 +27,12 @@ type Client struct {
 	httpClient        *http.Client
 	streamHTTPClient  *http.Client
 	streamIdleTimeout time.Duration
+
+	// zcodeEndpointMu 保护插件 ID 发现结果的缓存。
+	// 插件 ID 由文件名决定，运维改名后旧端点会 404，缓存带 TTL 让请求自动恢复。
+	zcodeEndpointMu       sync.Mutex
+	zcodeSummaryEndpoint  string
+	zcodeEndpointExpiry   time.Time
 }
 
 type RequestLogResult struct {

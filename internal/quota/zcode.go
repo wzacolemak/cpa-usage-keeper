@@ -3,14 +3,18 @@ package quota
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"regexp"
+	"strconv"
 )
 
 // zcodeSummaryFetcher 由 cpa.Client 实现：直接请求 CPA 自身的插件端点。
 //
 // 不能用 ManagementAPICaller.CallManagementAPI 读这个端点：api-call 要求传入
-// 完整的上游 URL，而 /v0/resource/plugins/zcode/summary 是 CPA 自己的路由，
-// 由 CPA 带凭证转发到 zcode 插件。
+// 完整的上游 URL，而 /v0/resource/plugins/<插件ID>/summary 是 CPA 自己的路由，
+// 由 CPA 带凭证转发到 zcode 插件。插件 ID 由插件文件名决定（历史上从 zcode 改成
+// zcode-oauth），所以具体端点由内部 cpa 客户端动态解析。
 type zcodeSummaryFetcher interface {
 	FetchZcodeSummary(ctx context.Context) (json.RawMessage, error)
 }
@@ -35,7 +39,7 @@ func (p zcodeProvider) Check(ctx context.Context, input ProviderInput) (Provider
 	}
 	raw, err := fetcher.FetchZcodeSummary(ctx)
 	if err != nil {
-		return ProviderOutput{}, err
+		return ProviderOutput{}, asProviderHTTPError(err)
 	}
 	summary, err := parseZcodeSummaryPayload(raw)
 	if err != nil {
@@ -45,6 +49,45 @@ func (p zcodeProvider) Check(ctx context.Context, input ProviderInput) (Provider
 		return ProviderOutput{}, fmt.Errorf("zcode credential is not logged in")
 	}
 	return ProviderOutput{Provider: "zcode", Result: ZcodeResult{Summary: summary}}, nil
+}
+
+// providerHTTPStatusPattern 从 cpa 层的纯文本错误里提取 HTTP 状态码。
+//
+// cpa.Client 只返回 fmt.Errorf("... request returned status 404")，不会带结构化错误，
+// 而 refresh.go 只有在拿到 ProviderHTTPError（或错误文本以 "HTTP " 开头）时才会
+// 把真实原因展示给用户；否则一律退化成 "Quota refresh failed"。
+var providerHTTPStatusPattern = regexp.MustCompile(`status (\d{3})`)
+
+// asProviderHTTPError 把 cpa 层的错误提升成 ProviderHTTPError，保留真实状态码。
+func asProviderHTTPError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var httpErr ProviderHTTPError
+	if errors.As(err, &httpErr) {
+		return err
+	}
+	match := providerHTTPStatusPattern.FindStringSubmatch(err.Error())
+	if len(match) != 2 {
+		return err
+	}
+	statusCode, convErr := strconv.Atoi(match[1])
+	if convErr != nil {
+		return err
+	}
+	return ProviderHTTPError{StatusCode: statusCode, Message: providerHTTPErrorMessage(statusCode, err)}
+}
+
+// providerHTTPErrorMessage 给常见状态码补一句可操作的中文说明。
+func providerHTTPErrorMessage(statusCode int, err error) string {
+	switch statusCode {
+	case 404:
+		return fmt.Sprintf("zcode 插件接口不存在（插件可能被改名或未启用）: %v", err)
+	case 401, 403:
+		return fmt.Sprintf("CPA 管理密钥无效或无权访问该接口: %v", err)
+	default:
+		return err.Error()
+	}
 }
 
 // parseZcodeSummaryPayload 把插件 summary 响应折算成 ZcodeSummaryPayload。
