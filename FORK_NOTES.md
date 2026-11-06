@@ -4,9 +4,8 @@
 > [Willxup/cpa-usage-keeper](https://github.com/Willxup/cpa-usage-keeper) 之上叠加的改动，
 > 供未来合并上游时定位冲突与决策。
 >
-> 上游基线：fork 点 ≈ v1.15.4（885a671d）→ 已合并 **v1.15.11**（2026-11-07）。
-> **上游 v2.0 是整体重写（v1.15.11→v2.0.0 改 644 文件），fork 的挂载点大半不存在，
-> 升 v2 是迁移项目不是 merge** —— 详见第四节。
+> 上游基线：fork 点 ≈ v1.15.4（885a671d）→ 已合并 **v2.0.3**（2026-11-07，v1→v2 迁移完成）。
+> v2 是 next 分支整体晋升（v1.15.11→v2.0.0 改 644 文件）；本次迁移的取舍见第四节。
 
 ## 一、合并操作流程（v1 线已验证）
 
@@ -66,3 +65,37 @@
 - v2 升级 = **迁移项目**：zcode provider 重写接入新 CPA client 结构、凭据/配额页 UI 重做、
   `app.db` 自动迁移（有独立回滚指引；升级前必须备份 /data/app.db）。
 - 上游 v1 线止于 v1.15.11（已 EOL），v1 通道不再发版。
+
+## 五、v2.0.3 迁移实录（2026-11-07）
+
+### 被上游 v2 原生替代、已删除的 fork 实现
+- **分时段计价整套**（internal/pricing/window.go、三处 pricing_time_windows_config.go、
+  usage_overview_pricing 的 PricingBucket、WithOccurredAt、前端 PriceTimeWindowsPanel*、
+  PriceSettingsCard/PriceRulesHelp 的 fork 接线、api.ts 的 PricingTimeWindows*）——
+  v2 原生有 ModelPricingBranchEditor + Snapshot.location + Subject.Timestamp。
+  **注意：v1 时代配置的 time_window 规则（3 条 peak×2.0）与 pricing_time_windows
+  配置在迁移前手动清除，升级后需用 v2 的分支编辑器重建。**
+- **antigravity 逐模型兜底**（antigravity_models.go、checkModelGroups、dedupe 循环、
+  AntigravityModels 模板、两个 argon 测试中的 per-model 部分）——v2 的
+  antigravityUserAgent = hub/2.23.0（≥2.9.0），summary 原生下发含 argon 的全部组。
+- **ranking**（v2 删除并有专用 migration 20261009_remove_ranking）。
+
+### 保留并移植的 fork 功能
+- zcode provider 全栈（internal/cpa/zcode.go + internal/quota/zcode.go + reset 链路 +
+  前端 SharedQuotaGroup/ZcodeWindowResetAction + i18n）——endpoint 常量并入 v2 的
+  /v8/management 路径表；plugin summary 端点运行时发现逻辑不变。
+- OpenCode Go / DeepSeek 余额面板（后端 + 前端 + env 配置）。
+- tokenprocessor identity 别名 zcode/zcode-oauth → HandlerClaude（GLM input 折叠）。
+- antigravity groupKey 规范化（含 antigravity-gemini-4-argon；已实测 v2 hub summary 下
+  argon 独立组键正常）。
+- provider display-name（ProviderKeyConfig/OpenAICompatibilityConfig 的 DisplayName 字段）。
+
+### v2 迁移的数据坑
+- app.db v1→v2 迁移会校验已存定价规则：**key=time_window 的规则会让迁移失败**
+  （v2 规则字段表没有 time_window）。迁移失败时 v2 自动留备份（/data/backups/），
+  恢复流程 = 停容器 → 用 pre-upgrade 备份覆盖 app.db → 清理不认识的规则 → 重启 v2。
+- 本次迁移前手动删除了 3 条 time_window 测试规则（2026-11-05 由另一会话创建）。
+
+### v2 后的合并基线
+未来 merge 上游 v2.x：merge-base 已正确落在 v2 历史，冲突面回到常规规模；
+行尾已全 LF（.gitattributes），照第一节流程走即可。

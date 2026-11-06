@@ -19,7 +19,6 @@ const (
 	RuleFieldReasoningEffort
 	RuleFieldEndpoint
 	RuleFieldExecutorType
-	RuleFieldTimeWindow
 	ruleFieldCount
 )
 
@@ -33,7 +32,6 @@ var ruleFieldNames = [...]string{
 	RuleFieldReasoningEffort:     "reasoning_effort",
 	RuleFieldEndpoint:            "endpoint",
 	RuleFieldExecutorType:        "executor_type",
-	RuleFieldTimeWindow:          "time_window",
 }
 
 // ParseRuleField 将用户输入编译为固定枚举，避免任意字符串进入查询构造。
@@ -54,33 +52,6 @@ func (f RuleField) String() string {
 	return ruleFieldNames[f]
 }
 
-// ActiveFields 是编译后的字段位图，仅包含确实会改变价格的规则字段。
-type ActiveFields uint16
-
-func (f ActiveFields) Has(field RuleField) bool {
-	if field <= RuleFieldInvalid || field >= ruleFieldCount {
-		return false
-	}
-	return f&(1<<uint(field-1)) != 0
-}
-
-func (f ActiveFields) Len() int {
-	count := 0
-	for field := RuleFieldAPIGroupKey; field < ruleFieldCount; field++ {
-		if f.Has(field) {
-			count++
-		}
-	}
-	return count
-}
-
-func (f ActiveFields) with(field RuleField) ActiveFields {
-	if field <= RuleFieldInvalid || field >= ruleFieldCount {
-		return f
-	}
-	return f | (1 << uint(field-1))
-}
-
 // UsageDimensions 是所有计价来源共享的固定字段映射，不使用反射或动态 map。
 type UsageDimensions struct {
 	APIGroupKey         string
@@ -92,8 +63,6 @@ type UsageDimensions struct {
 	ReasoningEffort     string
 	Endpoint            string
 	ExecutorType        string
-	// TimeWindow 由事件时刻推导（见 Resolver.Calculate），不是请求里带的字段。
-	TimeWindow string
 }
 
 func (d UsageDimensions) Value(field RuleField) string {
@@ -116,8 +85,6 @@ func (d UsageDimensions) Value(field RuleField) string {
 		return d.Endpoint
 	case RuleFieldExecutorType:
 		return d.ExecutorType
-	case RuleFieldTimeWindow:
-		return d.TimeWindow
 	default:
 		return ""
 	}
@@ -133,7 +100,6 @@ func canonicalizeUsageDimensions(dimensions UsageDimensions) UsageDimensions {
 	dimensions.ReasoningEffort = strings.TrimSpace(dimensions.ReasoningEffort)
 	dimensions.Endpoint = strings.TrimSpace(dimensions.Endpoint)
 	dimensions.ExecutorType = strings.TrimSpace(dimensions.ExecutorType)
-	dimensions.TimeWindow = strings.TrimSpace(dimensions.TimeWindow)
 	return dimensions
 }
 

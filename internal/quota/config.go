@@ -26,6 +26,9 @@ const (
 
 	CodexSubscriptionsURL = "https://chatgpt.com/backend-api/subscriptions"
 
+	// antigravityUserAgent 与 CPAMC 的 Antigravity Hub 限额及套餐请求保持一致。
+	antigravityUserAgent = "antigravity/hub/2.23.0 darwin/arm64"
+
 	// xaiGrokClientVersion 与 CPA 当前 Grok CLI chat-proxy 请求保持一致。
 	xaiGrokClientVersion = "0.2.93"
 )
@@ -73,7 +76,7 @@ func DefaultProviderConfigs() ProviderConfigs {
 				Headers: map[string]string{
 					"Authorization": "Bearer $TOKEN$",
 					"Content-Type":  "application/json",
-					"User-Agent":    "antigravity/cli/2.9.1 (aidev_client; os_type=darwin; arch=arm64)",
+					"User-Agent":    antigravityUserAgent,
 				},
 			},
 			{
@@ -82,7 +85,7 @@ func DefaultProviderConfigs() ProviderConfigs {
 				Headers: map[string]string{
 					"Authorization": "Bearer $TOKEN$",
 					"Content-Type":  "application/json",
-					"User-Agent":    "antigravity/cli/2.9.1 (aidev_client; os_type=darwin; arch=arm64)",
+					"User-Agent":    antigravityUserAgent,
 				},
 			},
 			{
@@ -91,36 +94,7 @@ func DefaultProviderConfigs() ProviderConfigs {
 				Headers: map[string]string{
 					"Authorization": "Bearer $TOKEN$",
 					"Content-Type":  "application/json",
-					"User-Agent":    "antigravity/cli/2.9.1 (aidev_client; os_type=darwin; arch=arm64)",
-				},
-			},
-		},
-		AntigravityModels: []APICallConfig{
-			{
-				Method: "POST",
-				URL:    "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota",
-				Headers: map[string]string{
-					"Authorization": "Bearer $TOKEN$",
-					"Content-Type":  "application/json",
-					"User-Agent":    "antigravity/cli/2.9.1 (aidev_client; os_type=darwin; arch=arm64)",
-				},
-			},
-			{
-				Method: "POST",
-				URL:    "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
-				Headers: map[string]string{
-					"Authorization": "Bearer $TOKEN$",
-					"Content-Type":  "application/json",
-					"User-Agent":    "antigravity/cli/2.9.1 (aidev_client; os_type=darwin; arch=arm64)",
-				},
-			},
-			{
-				Method: "POST",
-				URL:    "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
-				Headers: map[string]string{
-					"Authorization": "Bearer $TOKEN$",
-					"Content-Type":  "application/json",
-					"User-Agent":    "antigravity/cli/2.9.1 (aidev_client; os_type=darwin; arch=arm64)",
+					"User-Agent":    antigravityUserAgent,
 				},
 			},
 		},
@@ -131,7 +105,7 @@ func DefaultProviderConfigs() ProviderConfigs {
 				Headers: map[string]string{
 					"Authorization": "Bearer $TOKEN$",
 					"Content-Type":  "application/json",
-					"User-Agent":    "antigravity/cli/2.9.1 (aidev_client; os_type=darwin; arch=arm64)",
+					"User-Agent":    antigravityUserAgent,
 				},
 			},
 			{
@@ -140,7 +114,7 @@ func DefaultProviderConfigs() ProviderConfigs {
 				Headers: map[string]string{
 					"Authorization": "Bearer $TOKEN$",
 					"Content-Type":  "application/json",
-					"User-Agent":    "antigravity/cli/2.9.1 (aidev_client; os_type=darwin; arch=arm64)",
+					"User-Agent":    antigravityUserAgent,
 				},
 			},
 		},

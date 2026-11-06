@@ -2,7 +2,6 @@ package test
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"cpa-usage-keeper/internal/cpa/dto/apicall"
@@ -13,64 +12,6 @@ import (
 // TestAntigravityProviderKeepsExhaustedArgonModels 验证 models 映射形态下
 // 已耗尽的 argon 模型（fetchAvailableModels 省略 remainingFraction，只给
 // resetTime）仍按 0 参与聚合，周窗口组不会整组消失。
-func TestAntigravityProviderKeepsExhaustedArgonModels(t *testing.T) {
-	caller := &recordingManagementCaller{responses: []*apicall.Response{
-		// 1) retrieveUserQuotaSummary：只有 Claude/GPT 组。
-		quotaAPIResponse(200, `{"body":{"groups":[{"displayName":"Claude and GPT models","buckets":[{"bucketId":"3p-weekly","displayName":"Weekly Limit Remaining","window":"weekly","remainingFraction":0.25,"resetTime":"2026-11-03T17:07:47Z"}]}]}}`),
-		// 2) fetchAvailableModels：models 映射。argon 系列已耗尽——没有
-		//    remainingFraction 字段，只有周窗口 resetTime。
-		quotaAPIResponse(200, `{"body":{"models":{
-			"gemini-3-flash":{"apiProvider":"API_PROVIDER_GOOGLE_GEMINI","displayName":"gemini-3-flash","quotaInfo":{"remainingFraction":1,"resetTime":"2026-11-01T10:41:55Z"}},
-			"gemini-4-argon-low":{"apiProvider":"API_PROVIDER_GOOGLE_GEMINI","displayName":"gemini-4-argon-low","quotaInfo":{"resetTime":"2026-11-03T16:26:03Z"}},
-			"gemini-4-argon-medium":{"apiProvider":"API_PROVIDER_GOOGLE_GEMINI","displayName":"gemini-4-argon-medium","quotaInfo":{"resetTime":"2026-11-03T16:26:03Z"}},
-			"gemini-4-argon-high":{"apiProvider":"API_PROVIDER_GOOGLE_GEMINI","displayName":"gemini-4-argon-high","quotaInfo":{"resetTime":"2026-11-03T16:26:03Z"}}
-		}}}`),
-		// 3) loadCodeAssist：套餐等级。
-		quotaAPIResponse(200, `{"body":{"paidTier":{"id":"g1-pro-tier","name":"Google AI Pro"}}}`),
-	}}
-	configs := quota.DefaultProviderConfigs()
-	provider := quota.NewAntigravityProvider(caller, configs.Antigravity[:1], configs.AntigravitySubscriptions, configs.AntigravityModels[1:2])
-
-	output, err := provider.Check(context.Background(), quota.ProviderInput{Identity: entities.UsageIdentity{
-		Identity:  "ag-auth",
-		ProjectID: new("aicode-consumers"),
-	}})
-	if err != nil {
-		t.Fatalf("Check returned error: %v", err)
-	}
-	result := output.Result.(quota.AntigravityResult)
-	var gemini *quota.AntigravityQuotaGroup
-	for i, group := range result.Quota.Groups {
-		if group.DisplayName == "Gemini models" {
-			gemini = &result.Quota.Groups[i]
-		}
-	}
-	if gemini == nil {
-		t.Fatalf("expected Gemini group, got %#v", result.Quota.Groups)
-	}
-	if len(gemini.Buckets) != 2 {
-		t.Fatalf("expected 5h + weekly buckets, got %#v", gemini.Buckets)
-	}
-	weekly := gemini.Buckets[1]
-	if weekly.Window != "weekly" {
-		t.Fatalf("expected weekly bucket second, got %#v", gemini.Buckets)
-	}
-	if weekly.RemainingFraction == nil || *weekly.RemainingFraction != 0 {
-		t.Fatalf("expected weekly remaining 0 for exhausted argon, got %v", weekly.RemainingFraction)
-	}
-	if weekly.ResetTime != "2026-11-03T16:26:03Z" {
-		t.Fatalf("expected weekly resetTime, got %q", weekly.ResetTime)
-	}
-	for _, name := range []string{"gemini-4-argon-low", "gemini-4-argon-medium", "gemini-4-argon-high"} {
-		if !strings.Contains(gemini.Description, name) {
-			t.Fatalf("expected %s listed in group description %q", name, gemini.Description)
-		}
-	}
-}
-
-// TestAntigravityProviderPrefersSummaryGroupsAndSeparateArgonKey 验证：
-// summary（UA>=2.9.0）已返回 Gemini Models 与独立的 Gemini 4 Argon 组时，
-// 逐模型聚合的同名组被去重；argon 组拿到独立 groupKey，不并入通用 Gemini 组。
 func TestAntigravityProviderPrefersSummaryGroupsAndSeparateArgonKey(t *testing.T) {
 	caller := &recordingManagementCaller{responses: []*apicall.Response{
 		// 1) retrieveUserQuotaSummary：三组，含独立的 argon 组。
@@ -91,7 +32,7 @@ func TestAntigravityProviderPrefersSummaryGroupsAndSeparateArgonKey(t *testing.T
 		quotaAPIResponse(200, `{"body":{"paidTier":{"id":"g1-pro-tier","name":"Google AI Pro"}}}`),
 	}}
 	configs := quota.DefaultProviderConfigs()
-	provider := quota.NewAntigravityProvider(caller, configs.Antigravity[:1], configs.AntigravitySubscriptions, configs.AntigravityModels[:1])
+	provider := quota.NewAntigravityProvider(caller, configs.Antigravity[:1], configs.AntigravitySubscriptions)
 
 	output, err := provider.Check(context.Background(), quota.ProviderInput{Identity: entities.UsageIdentity{
 		Identity:  "ag-auth",

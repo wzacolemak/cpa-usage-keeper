@@ -92,6 +92,7 @@ type QuotaRow struct {
 type QuotaResetCardInfo struct {
 	WindowKey string `json:"windowKey"`
 	Count     int    `json:"count"`
+	Earliest  string `json:"earliest,omitempty"`
 }
 
 type AntigravityQuotaBucket struct {

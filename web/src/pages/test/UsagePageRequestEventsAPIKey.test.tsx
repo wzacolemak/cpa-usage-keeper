@@ -12,6 +12,7 @@ const api = vi.hoisted(() => ({
   fetchUsageEvents: vi.fn(),
   exportUsageEvents: vi.fn(),
   fetchUsageOverview: vi.fn(),
+  fetchUsageOverviewComparisons: vi.fn(),
   fetchUsageOverviewRealtime: vi.fn(),
   fetchUsageActivity: vi.fn(),
   fetchAnalysis: vi.fn(),
@@ -63,7 +64,7 @@ describe('UsagePage top API Key request event filter', () => {
       version: 9, filters: { model: 'gpt-5', apiKeyId: '22', source: 'source-1', result: 'failed' },
     }));
     localStorage.setItem('cli-proxy-usage-time-range-v1', '24h');
-    for (const mock of [api.fetchUsageOverview, api.fetchUsageOverviewRealtime, api.fetchUsageActivity, api.fetchAnalysis, api.fetchAnalysisLatency]) {
+    for (const mock of [api.fetchUsageOverview, api.fetchUsageOverviewComparisons, api.fetchUsageOverviewRealtime, api.fetchUsageActivity, api.fetchAnalysis, api.fetchAnalysisLatency]) {
       mock.mockReset().mockReturnValue(new Promise(() => undefined));
     }
     api.fetchCpaApiKeyOptions.mockReset().mockResolvedValue(keyOptions);
@@ -243,6 +244,58 @@ describe('UsagePage top API Key request event filter', () => {
     expect(api.exportUsageEvents).toHaveBeenLastCalledWith(expect.objectContaining({ range: 'yesterday' }), 'json', expect.objectContaining({ apiKeyId: '11' }));
   });
 
+  it('invalidates candidates on automatic refresh and range changes, but fetches immediately on manual refresh', async () => {
+    vi.useFakeTimers();
+    await render();
+    const scopedCalls = () => api.fetchCpaApiKeyOptions.mock.calls.filter((call) => call[1]);
+    const toggleKey = async () => { await act(async () => topKey().click()); };
+    expect(scopedCalls()).toHaveLength(0);
+    await toggleKey();
+    await toggleKey();
+    expect(scopedCalls()).toHaveLength(1);
+    await toggleKey();
+    await toggleKey();
+    expect(scopedCalls()).toHaveLength(1);
+
+    await act(async () => vi.advanceTimersByTimeAsync(10_000));
+    expect(scopedCalls()).toHaveLength(1);
+    let finish!: (value: typeof keyOptions) => void;
+    api.fetchCpaApiKeyOptions.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    await toggleKey();
+    expect(scopedCalls()).toHaveLength(2);
+    expect(Array.from(document.querySelectorAll('[role="option"]'), (node) => node.textContent)).toEqual(['All', 'Overview key', 'Events key', 'Other key']);
+    await act(async () => finish(keyOptions));
+    await toggleKey();
+
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-time-range-trigger="desktop"]')!.click());
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-time-range-mode="yesterday"]')!.click());
+    expect(scopedCalls()).toHaveLength(2);
+    await toggleKey();
+    expect(scopedCalls()).toHaveLength(3);
+    expect(scopedCalls().at(-1)![1]).toMatchObject({ scope: 'request-events', range: { range: 'yesterday' } });
+    await toggleKey();
+    await act(async () => triggerHeaderRefresh());
+    expect(scopedCalls()).toHaveLength(4);
+    await toggleKey();
+    expect(scopedCalls()).toHaveLength(4);
+  });
+
+  it('keeps a selected registered key when it has no events in the current scope', async () => {
+    api.fetchCpaApiKeyOptions.mockImplementation(async (_signal, request) => request ? { options: [keyOptions.options[1]] } : keyOptions);
+    await render();
+    expect(topKey().textContent).toContain('Overview key');
+    expect(api.fetchUsageEvents.mock.lastCall![2].apiKeyId).toBe('11');
+    await act(async () => topKey().click());
+    const options = Array.from(document.querySelectorAll('[role="option"]')).map((node) => node.textContent);
+    expect(options).toContain('Events key');
+    expect(options).not.toContain('Overview key');
+    expect(options).not.toContain('Other key');
+    expect(localStorage.getItem(TOP_KEY_STORAGE)).toBe('11');
+    const scopedCalls = api.fetchCpaApiKeyOptions.mock.calls.filter((call) => call[1]);
+    expect(scopedCalls).toHaveLength(1);
+    expect(scopedCalls[0][1]).toEqual({ scope: 'request-events', range: expect.objectContaining({ range: '24h' }) });
+  });
+
   it('isolates Overview and Realtime requests while retaining the shared API Key filter', async () => {
     await render();
     await choose(topKey(), 'Other key');
@@ -250,18 +303,27 @@ describe('UsagePage top API Key request event filter', () => {
       await act(async () => container.querySelector<HTMLAnchorElement>(`[data-dashboard-toolbar] a[href="${path}"]`)!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })));
     };
     await navigate('/overview');
+    await act(async () => topKey().click());
+    await act(async () => topKey().click());
+    expect(api.fetchCpaApiKeyOptions.mock.lastCall![1]).toMatchObject({ scope: 'overview', range: { range: '24h' } });
     expect(api.fetchUsageOverview).toHaveBeenLastCalledWith(expect.anything(), expect.any(AbortSignal), '33');
     expect(api.fetchUsageOverviewRealtime).not.toHaveBeenCalled();
     expect(api.fetchUsageActivity).toHaveBeenLastCalledWith(expect.objectContaining({ apiKeyId: '33' }));
     const overviewCalls = api.fetchUsageOverview.mock.calls.length;
     const activityCalls = api.fetchUsageActivity.mock.calls.length;
     await navigate('/realtime');
+    await act(async () => topKey().click());
+    await act(async () => topKey().click());
+    expect(api.fetchCpaApiKeyOptions.mock.lastCall![1]).toEqual({ scope: 'realtime', window: '15m' });
     expect(api.fetchUsageOverviewRealtime).toHaveBeenLastCalledWith(expect.objectContaining({ apiKeyId: '33' }));
     expect(container.querySelector('[data-time-range-trigger]')).toBeNull();
     await act(async () => { void triggerHeaderRefresh(); });
     expect(api.fetchUsageOverview.mock.calls.length).toBe(overviewCalls);
     expect(api.fetchUsageActivity.mock.calls.length).toBe(activityCalls);
     await navigate('/analysis');
+    await act(async () => topKey().click());
+    await act(async () => topKey().click());
+    expect(api.fetchCpaApiKeyOptions.mock.lastCall![1]).toMatchObject({ scope: 'analysis', range: { range: '24h' } });
     expect(api.fetchAnalysis).toHaveBeenLastCalledWith(expect.anything(), expect.any(AbortSignal), '33');
     expect(api.fetchAnalysisLatency).toHaveBeenLastCalledWith(expect.anything(), expect.any(AbortSignal), '33');
     await navigate('/request-events');

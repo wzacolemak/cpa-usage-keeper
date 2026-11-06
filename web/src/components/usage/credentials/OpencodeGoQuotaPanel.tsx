@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { fetchOpencodeGoQuota } from '@/lib/api'
 import type { UsageIdentity } from '@/lib/types'
-import { formatQuotaResetDuration, formatQuotaResetLabel } from './AuthFileCredentialsSection'
+import { formatQuotaResetDuration, formatQuotaResetLabel } from './CredentialsSection'
 import styles from './OpencodeGoQuotaPanel.module.scss'
 
 // 窗口展示顺序固定：5 小时 → 每周 → 每月，对应上游 usage 的三个滚动窗口。

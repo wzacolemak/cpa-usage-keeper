@@ -10,17 +10,11 @@ import (
 type CostSubject struct {
 	Dimensions UsageDimensions
 	Tokens     helper.UsageTokenCostInput
-	// OccurredAt 是该笔用量发生的时刻（事件时间或聚合桶起点）。
-	// 分时段计价用它推导 TimeWindow；零值表示无法确定时刻，此时不做分时段加成。
-	OccurredAt time.Time
+	// Timestamp 是已存 CPA 事件时间，供每日时段分支匹配。
+	Timestamp time.Time
 }
 
-// WithOccurredAt 返回带上发生时刻的新 subject，用于分时段计价。
-func (s CostSubject) WithOccurredAt(at time.Time) CostSubject {
-	s.OccurredAt = at
-	return s
-}
-
+// NewCostSubject 规范化事件身份字段；时间由调用方从 CPA 已存 timestamp 填入。
 func NewCostSubject(dimensions UsageDimensions, tokens helper.UsageTokenCostInput) CostSubject {
 	return CostSubject{
 		Dimensions: canonicalizeUsageDimensions(dimensions),
@@ -28,72 +22,53 @@ func NewCostSubject(dimensions UsageDimensions, tokens helper.UsageTokenCostInpu
 	}
 }
 
-type CostResult struct {
-	Cost           helper.UsageTokenCostBreakdown
-	Available      bool
-	PricingStyle   string
-	MatchedModel   string
-	MatchedBy      string
-	RuleMultiplier float64
-	// TimeWindow 是本次计价命中的时段名，空表示未命中任何时段。
-	TimeWindow string
-}
-
-// Resolver 在创建时固定绑定一个 Snapshot，确保单个响应不会混用新旧价格。
+// Resolver 在创建时固定绑定一个 Snapshot，确保同一事件批次不会混用新旧价格。
 type Resolver struct {
 	snapshot *Snapshot
 }
 
-func (r Resolver) ActiveFields() ActiveFields {
-	if r.snapshot == nil {
-		return 0
-	}
-	return r.snapshot.activeFields
-}
-
-func (r Resolver) Calculate(subject CostSubject) CostResult {
-	// 先按事件时刻推导时段，再据此匹配规则，使 time_window 规则与其他维度规则同构。
-	if r.snapshot != nil && r.snapshot.windows != nil && !subject.OccurredAt.IsZero() {
-		subject.Dimensions.TimeWindow = r.snapshot.windows.WindowAt(subject.OccurredAt)
-	}
-	model, matchedModel, matchedBy, found := r.matchModel(subject.Dimensions)
+// CalculateFee 用本批固定配置选择整条请求的单价及倍率，仅返回 USD 总额和可用性。
+// 仅事件入库、首次回填及显式重算写回调用；不写数据库，也不暴露分项或匹配追溯。
+func (r Resolver) CalculateFee(subject CostSubject) FeeResult {
+	model, found := r.matchModel(subject.Dimensions)
 	if !found {
-		return CostResult{
-			Available:      !helper.UsageTokenInputRequiresPricing(subject.Tokens),
-			RuleMultiplier: 1,
-		}
+		return FeeResult{Available: !helper.UsageTokenInputRequiresPricing(subject.Tokens)}
 	}
 
-	breakdown := helper.CalculateUsageTokenCostBreakdown(subject.Tokens, model.pricing)
-	ruleMultiplier := 1.0
+	// 分支在编译时已校验互斥；这里仅按归一化输入量及已存 CPA 时间挑一组整请求单价。
+	selected := model.pricing
+	for _, branch := range model.branches {
+		if !branch.matches(subject, r.snapshot.location) {
+			continue
+		}
+		selected.PromptPricePer1M = branch.prices.Input
+		selected.CompletionPricePer1M = branch.prices.Output
+		selected.CacheReadPricePer1M = branch.prices.CacheRead
+		selected.CacheWritePricePer1M = branch.prices.CacheWrite
+		break
+	}
+	total := helper.CalculateUsageTokenCost(subject.Tokens, selected)
 	if model.pricing.PriceMultiplier == nil || *model.pricing.PriceMultiplier != 0 {
-		ruleMultiplier = matchingRuleMultiplier(model.rules, subject.Dimensions)
-		breakdown = helper.ScaleUsageTokenCostBreakdown(breakdown, ruleMultiplier)
+		total *= matchingRuleMultiplier(model.rules, subject.Dimensions)
 	}
-	return CostResult{
-		Cost:           breakdown,
-		Available:      true,
-		PricingStyle:   model.pricing.PricingStyle,
-		MatchedModel:   matchedModel,
-		MatchedBy:      matchedBy,
-		RuleMultiplier: ruleMultiplier,
-		TimeWindow:     subject.Dimensions.TimeWindow,
-	}
+	return FeeResult{TotalCostUSD: total, Available: true}
 }
 
-func (r Resolver) matchModel(dimensions UsageDimensions) (compiledModel, string, string, bool) {
+// matchModel 先匹配实际 model，未命中才使用 alias，保持既有模型选择顺序。
+func (r Resolver) matchModel(dimensions UsageDimensions) (compiledModel, bool) {
 	if r.snapshot == nil {
-		return compiledModel{}, "", "", false
+		return compiledModel{}, false
 	}
 	if model, ok := r.snapshot.modelsByName[dimensions.Model]; ok {
-		return model, dimensions.Model, "model", true
+		return model, true
 	}
 	if model, ok := r.snapshot.modelsByName[dimensions.ModelAlias]; ok {
-		return model, dimensions.ModelAlias, "model_alias", true
+		return model, true
 	}
-	return compiledModel{}, "", "", false
+	return compiledModel{}, false
 }
 
+// matchingRuleMultiplier 连乘所有精确匹配的条件；任一零倍率使整条请求免费。
 func matchingRuleMultiplier(rules []compiledRule, dimensions UsageDimensions) float64 {
 	multiplier := 1.0
 	for _, rule := range rules {
