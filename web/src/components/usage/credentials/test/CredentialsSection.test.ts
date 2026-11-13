@@ -1,7 +1,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
-import { CredentialsSection, CredentialQuotaPanel, INSPECTION_RESULT_PAGE_SIZE_OPTIONS, QuotaAutoRefreshSettingsModal, QuotaInspectionModal, buildInspectionResultsPage, buildInvalidInspectionAccountFileNames, buildQuotaAutoRefreshSettings, formatInspectionCompletedAt, formatInspectionProgressPercent, formatQuotaErrorDisplay, formatQuotaResetDuration, formatQuotaResetLabel, formatQuotaWindowUsageAriaLabel, inspectionIndicatorTone, invertInvalidInspectionAccountFileNames, isAutoRefreshSettingsControlDisabled, isAutoRefreshSettingsSaveDisabled, isInspectionStartDisabled, isQuotaInspectionCloseDisabled, isSelectableInspectionStatusFilter, nextInspectionResultStatusFilter, persistCredentialDisplayMode, readStoredCredentialDisplayMode, resolveQuotaAutoRefreshSettingsLoadFailure, selectAllInvalidInspectionAccountFileNames } from '../CredentialsSection'
+import { CredentialsSection, CredentialQuotaPanel, INSPECTION_RESULT_PAGE_SIZE_OPTIONS, QuotaAutoRefreshSettingsModal, QuotaInspectionModal, buildInspectionResultsPage, buildInvalidInspectionAccountFileNames, buildQuotaAutoRefreshSettings, formatInspectionCompletedAt, formatInspectionProgressPercent, formatQuotaErrorDisplay, formatQuotaResetDuration, formatQuotaResetLabel, formatQuotaWindowUsageAriaLabel, inspectionIndicatorTone, invertInvalidInspectionAccountFileNames, isAutoRefreshSettingsControlDisabled, isAutoRefreshSettingsSaveDisabled, isInspectionStartDisabled, isQuotaInspectionCloseDisabled, isSelectableInspectionStatusFilter, nextInspectionResultStatusFilter, resolveQuotaAutoRefreshSettingsLoadFailure, selectAllInvalidInspectionAccountFileNames } from '../CredentialsSection'
 import { createCredentialSectionProps } from './credentialSectionFixtures'
 import type { CredentialRow, DisplayQuota } from '../credentialViewModels'
 import type { UsageQuotaInspectionResult, UsageQuotaInspectionResultStatus } from '@/lib/types'
@@ -9,7 +9,21 @@ import type { UsageQuotaInspectionResult, UsageQuotaInspectionResultStatus } fro
 vi.mock('react-i18next', () => ({
   initReactI18next: { type: '3rdParty', init: () => undefined },
   useTranslation: () => ({
-    t: (key: string, params?: Record<string, string>) => `${key}:${params?.tokens ?? ''}:${params?.cost ?? ''}`,
+    // 额度分组标题走 QUOTA_GROUP_LABEL_KEYS 映射后再翻译，这里还原英文文案，
+    // 让断言校验「标题正确渲染并本地化」而不是暴露 i18n 键名。
+    t: (key: string, params?: Record<string, string>) => {
+      const quotaGroupLabels: Record<string, string> = {
+        'usage_stats.credentials_quota_group_gemini_models': 'Gemini Models',
+        'usage_stats.credentials_quota_group_gemini_argon': 'Gemini 4 Argon',
+        'usage_stats.credentials_quota_group_claude_gpt_models': 'Claude and GPT models',
+        'usage_stats.credentials_quota_group_zcode_models': 'Zcode Models',
+        'usage_stats.credentials_quota_group_zcode_mcp': 'Zcode MCP',
+      }
+      if (key in quotaGroupLabels) {
+        return quotaGroupLabels[key]
+      }
+      return `${key}:${params?.tokens ?? ''}:${params?.cost ?? ''}`
+    },
   }),
 }))
 
@@ -89,7 +103,7 @@ describe('CredentialsSection account details and metrics', () => {
     expect(html).not.toContain('data-kimi-site="international"')
   })
 
-  it('renders the 5h cache rate in health mode', () => {
+  it('shows health and quota together despite the legacy health-only preference', () => {
     const storage = new Map<string, string>([['cpa.credentials.displayMode', 'health']])
     vi.stubGlobal('window', {
       matchMedia: () => ({ matches: false }),
@@ -120,15 +134,20 @@ describe('CredentialsSection account details and metrics', () => {
           cache_read_tokens: 300,
           buckets: [],
         },
+        displayQuotas: [{
+          key: 'rate_limit.primary_window', label: '5h', percent: 25, barPercent: 75,
+          percentKind: 'used', status: 'ok', windowUsage: { tokens: '1.00M', cost: '$2.50' },
+        }],
       })
 
       const html = renderToStaticMarkup(createElement(CredentialsSection, createCredentialSectionProps({ rows: [row], total: 1 })))
 
-      expect(html).toContain('usage_stats.credentials_health_cache_rate_5h')
+      expect(html).toContain('1.00M')
+      expect(html).toContain('$2.50')
+      expect(html).toContain('usage_stats.credentials_health_cache_short')
       expect(html).toContain('37.50%')
-      expect(html).toContain('05/10 10:00')
-      expect(html).toContain('05/10 10:02')
-      expect(html).not.toContain('usage_stats.credentials_quota_usage_mode_label')
+      expect(html).toContain('usage_stats.credentials_last_used')
+      expect(html).toContain('usage_stats.credentials_quota_usage_mode_label')
     } finally {
       vi.unstubAllGlobals()
     }
@@ -149,8 +168,8 @@ describe('CredentialsSection account details and metrics', () => {
 
     const html = renderToStaticMarkup(createElement(CredentialsSection, createCredentialSectionProps({ rows: [row], total: 1 })))
 
-    expect(html).toContain('usage_stats.credentials_column_name')
-    expect(html).toContain('usage_stats.credentials_column_quota')
+    expect(html).toContain('data-credential-card="true"')
+    expect(html).toContain('data-credential-health-variant="compact"')
     expect(html).toContain('usage_stats.credentials_quota_usage_mode_label')
     expect(html).toContain('1.23K')
     expect(html).toContain('97.24%')
@@ -213,7 +232,7 @@ describe('CredentialsSection quota reset action', () => {
     expect(resetButton(html)).toContain('aria-haspopup="dialog"')
     expect(resetButton(html)).toContain('aria-busy="true"')
     expect(resetButton(html)).toContain('disabled=""')
-    expect(html).toContain('credentialRowRefreshButton')
+    expect(html).toContain('aria-label="usage_stats.credentials_refresh_single::"')
   })
 
   it('disables reset for deleted or refreshing rows', () => {
@@ -226,33 +245,6 @@ describe('CredentialsSection quota reset action', () => {
 
       expect(resetButton(html)).toContain('aria-haspopup="dialog"')
       expect(resetButton(html)).toContain('disabled=""')
-    }
-  })
-})
-
-describe('CredentialsSection display mode persistence', () => {
-  it('stores and restores the Credentials quota or health display mode', () => {
-    const storage = new Map<string, string>()
-    const localStorage = {
-      getItem: vi.fn((key: string) => storage.get(key) ?? null),
-      setItem: vi.fn((key: string, value: string) => {
-        storage.set(key, value)
-      }),
-    }
-    vi.stubGlobal('window', { localStorage })
-    try {
-      expect(readStoredCredentialDisplayMode()).toBe('quota')
-
-      persistCredentialDisplayMode('health')
-
-      expect(localStorage.setItem).toHaveBeenCalledWith('cpa.credentials.displayMode', 'health')
-      expect(readStoredCredentialDisplayMode()).toBe('health')
-
-      storage.set('cpa.credentials.displayMode', 'unexpected')
-
-      expect(readStoredCredentialDisplayMode()).toBe('quota')
-    } finally {
-      vi.unstubAllGlobals()
     }
   })
 })

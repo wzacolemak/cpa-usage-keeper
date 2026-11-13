@@ -9,9 +9,10 @@ import (
 func TestDefaultProviderConfigsContainsAPICallTemplates(t *testing.T) {
 	configs := quota.DefaultProviderConfigs()
 	templates := configs.APICallTemplates()
-	// 14 个既有模板 + 3 个 antigravity 逐模型接口（Gemini 组及其两个窗口的来源）。
-	if len(templates) != 17 {
-		t.Fatalf("expected 17 api-call templates, got %d", len(templates))
+	// 上游 v2.1.0 起 antigravity 用 retrieveUserQuotaSummary 一次返回全部组
+	// （含独立 Argon 额度），fork 原先的 3 个逐模型接口不再需要，总数 17 -> 14。
+	if len(templates) != 14 {
+		t.Fatalf("expected 14 api-call templates, got %d", len(templates))
 	}
 	if len(configs.Antigravity) != 3 {
 		t.Fatalf("expected 3 antigravity api-call templates, got %d", len(configs.Antigravity))
@@ -21,9 +22,6 @@ func TestDefaultProviderConfigsContainsAPICallTemplates(t *testing.T) {
 		t.Fatalf("expected 2 antigravity subscription templates, got %d", len(configs.AntigravitySubscriptions))
 	}
 
-	if len(configs.AntigravityModels) != 3 {
-		t.Fatalf("expected 3 antigravity model templates, got %d", len(configs.AntigravityModels))
-	}
 	for _, tc := range []struct {
 		config      quota.APICallConfig
 		method, url string
@@ -33,9 +31,6 @@ func TestDefaultProviderConfigsContainsAPICallTemplates(t *testing.T) {
 		{configs.Antigravity[2], "POST", "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary"},
 		{configs.AntigravitySubscriptions[0], "POST", "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"},
 		{configs.AntigravitySubscriptions[1], "POST", "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"},
-		{configs.AntigravityModels[0], "POST", "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota"},
-		{configs.AntigravityModels[1], "POST", "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels"},
-		{configs.AntigravityModels[2], "POST", "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels"},
 		{configs.Codex, "GET", "https://chatgpt.com/backend-api/wham/usage"},
 		{configs.GeminiCLI, "POST", "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota"},
 		{configs.GeminiCLICodeAssist, "POST", "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"},

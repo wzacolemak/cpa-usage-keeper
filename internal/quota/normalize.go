@@ -16,8 +16,9 @@ const (
 	quotaWindowThirtyDaySeconds    int64 = 30 * 24 * 60 * 60
 	quotaWindowAverageMonthSeconds int64 = 365 * 24 * 60 * 60 / 12
 	antigravityGeminiGroupKey            = "antigravity-gemini-models"
-	antigravityGeminiArgonGroupKey       = "antigravity-gemini-4-argon"
 	antigravityClaudeGPTGroupKey         = "antigravity-claude-and-gpt-models"
+	antigravityArgonGroupKey             = "antigravity-gemini-4-argon"
+	antigravityArgonWeeklyBucketID       = "gemini-argon-wtu-weekly"
 )
 
 func NormalizeQuotaRows(output ProviderOutput) []QuotaRow {
@@ -294,13 +295,24 @@ func appendGeminiCLICredits(rows []QuotaRow, keyPrefix string, tier *GeminiCliUs
 	return rows
 }
 
+func antigravitySeparateArgonObserved(output ProviderOutput) bool {
+	var result *AntigravityResult
+	switch value := output.Result.(type) {
+	case AntigravityResult:
+		result = &value
+	case *AntigravityResult:
+		result = value
+	}
+	return result != nil && result.Quota != nil && result.Quota.hasSeparateArgon
+}
+
 func normalizeAntigravityQuotaRows(result AntigravityResult) []QuotaRow {
 	if result.Quota == nil {
 		return nil
 	}
 	rows := make([]QuotaRow, 0)
 	for groupIndex, group := range result.Quota.Groups {
-		groupKey := antigravityQuotaGroupKey(group.DisplayName, groupIndex)
+		groupKey := antigravityQuotaGroupKey(group, groupIndex)
 		groupLabel := firstNonEmpty(group.DisplayName, fmt.Sprintf("Quota Group %d", groupIndex+1))
 		groupRows := make([]QuotaRow, 0, len(group.Buckets))
 		for bucketIndex, bucket := range group.Buckets {
@@ -330,7 +342,14 @@ func normalizeAntigravityQuotaRows(result AntigravityResult) []QuotaRow {
 	return rows
 }
 
-func antigravityQuotaGroupKey(displayName string, groupIndex int) string {
+func antigravityQuotaGroupKey(group AntigravityQuotaGroup, groupIndex int) string {
+	// 具体 bucket ID 比可变显示名更能证明是独立 Argon 额度组。
+	for _, bucket := range group.Buckets {
+		if strings.EqualFold(strings.TrimSpace(bucket.BucketID), antigravityArgonWeeklyBucketID) {
+			return antigravityArgonGroupKey
+		}
+	}
+	displayName := group.DisplayName
 	if knownKey, ok := knownAntigravityQuotaGroupKey(displayName); ok {
 		return knownKey
 	}
@@ -359,10 +378,13 @@ func knownAntigravityQuotaGroupKey(displayName string) (string, bool) {
 	words := strings.FieldsFunc(strings.ToLower(strings.TrimSpace(displayName)), func(value rune) bool {
 		return (value < 'a' || value > 'z') && (value < '0' || value > '9')
 	})
+	// 已确认的 Argon 名称先于旧的宽松词匹配，避免并进 Gemini 组。
+	if strings.Join(words, " ") == "gemini 4 argon" {
+		return antigravityArgonGroupKey, true
+	}
 	hasGemini := false
 	hasClaude := false
 	hasGPT := false
-	hasArgon := false
 	for _, word := range words {
 		switch word {
 		case "gemini":
@@ -371,15 +393,12 @@ func knownAntigravityQuotaGroupKey(displayName string) (string, bool) {
 			hasClaude = true
 		case "gpt":
 			hasGPT = true
-		case "argon":
-			hasArgon = true
 		}
 	}
+	// 只有精确的 "Gemini 4 Argon"（上面已先行返回）才是独立 Argon 组；
+	// 带额外词的变体（例如旧版 "Gemini 4 Argon Extra"）仍归入通用 Gemini 组，
+	// 这是上游 v2.1.0 收紧后的判据，也避免把历史名称拆成第二个 Argon 卡。
 	switch {
-	case hasGemini && hasArgon:
-		// "Gemini 4 Argon" 是官方独立配额组（"Argon quota is separate"），
-		// 不能落进通用 Gemini 组的 key，否则前端会把两张卡并成一张。
-		return antigravityGeminiArgonGroupKey, true
 	case hasGemini && !hasClaude && !hasGPT:
 		return antigravityGeminiGroupKey, true
 	case hasClaude && hasGPT && !hasGemini:

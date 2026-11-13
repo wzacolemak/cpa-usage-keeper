@@ -4,8 +4,10 @@
 > [Willxup/cpa-usage-keeper](https://github.com/Willxup/cpa-usage-keeper) 之上叠加的改动，
 > 供未来合并上游时定位冲突与决策。
 >
-> 上游基线：fork 点 ≈ v1.15.4（885a671d）→ 已合并 **v2.0.3**（2026-11-07，v1→v2 迁移完成）。
-> v2 是 next 分支整体晋升（v1.15.11→v2.0.0 改 644 文件）；本次迁移的取舍见第四节。
+> 上游基线：fork 点 ≈ v1.15.4（885a671d）→ v2.0.3（2026-11-07，v1→v2 迁移）
+> → **v2.1.0（2026-11-13）**。
+> v2 是 next 分支整体晋升（v1.15.11→v2.0.0 改 644 文件）；v2.0.3→v2.1.0 为常规增量
+> （69 提交），取舍见第四、五节与新增的第六节。
 
 ## 一、合并操作流程（v1 线已验证）
 
@@ -99,3 +101,60 @@
 ### v2 后的合并基线
 未来 merge 上游 v2.x：merge-base 已正确落在 v2 历史，冲突面回到常规规模；
 行尾已全 LF（.gitattributes），照第一节流程走即可。
+
+## 六、v2.1.0 合并实录（2026-11-13）
+
+69 个上游提交（v2.0.3 → v2.1.0）。**4 个冲突，全部在前端**，且都属于「上游重构了
+fork 也改过的同一处代码」。
+
+### 冲突与解法
+
+| 文件 | 冲突实质 | 解法 |
+|---|---|---|
+| `ProviderBrandIcon.tsx` | fork 用 `zcode` 品牌键；上游新增 `zai` 规范键 + `z.ai`/`z-ai`/`zhipu`/`glm`/`chatglm` 别名 | 取上游 `zai` 为规范键并保留其全部别名，**追加** fork 的 `zcode`/`zcode-oauth` 与 `zcode.svg`（两种图标并存：上游字形版、fork 圆角方块版） |
+| `CredentialSections.module.scss` | fork 的 zcode 重置按钮样式 / 上游新增卡片紧凑变体 | 两块互不相关，**全部保留**。注意 ours 段末尾的 `}` 原本由冲突标记后的内容补齐，拼接时必须显式补回 |
+| `CredentialSections.tsx` | 上游把 `SharedQuotaGroup` 重构为 `AntigravityQuotaGroup`（仅 antigravity）并加 `compact`；fork 的版本还承载分组标题本地化 + zcode 重置按钮 | 保留 fork 实现（是上游版本的功能超集），吸收上游的 `compact` 参数与 `fullWidth` 计算；`CredentialQuotaPanel` 签名合并两侧参数（`variant` + `onZcodeAfterReset`） |
+| `i18n/index.ts` | 上游删除了 `credentials_auth_files_*` / `credentials_display_mode_*` 等键 | 这些键仍被 fork 的 display-mode 切换与 `credentialProviderFilters` 使用，**保留 ours**（theirs 侧为空块） |
+
+### 合并时被静默覆盖、需手工补回的 fork 代码
+
+冲突标记之外的自动合并也会吞掉 fork 内容，本次实测有 3 处，`npx tsc --noEmit` 全部抓到：
+
+- `IconChartLine` 图标 import（display mode 切换按钮）
+- `resetUsageQuota` API import（zcode 重置卡片）
+- `type CredentialDisplayMode` 类型别名
+
+**教训：合并后必须跑 `npx tsc --noEmit`**，Go 侧能编译不代表前端完整。
+
+### 语义性回归（编译通过但行为错）
+
+`internal/quota/normalize.go` 的 `knownAntigravityQuotaGroupKey`：fork 用宽松的
+`hasGemini && hasArgon` 把任何带 argon 词的名字都归到独立 Argon 组；上游 v2.1.0 收紧为
+**只有精确的 `gemini 4 argon`** 才归 Argon，带额外词的旧名（`Gemini 4 Argon Extra`）
+落回通用 Gemini 组。合并保留了 fork 的 `hasArgon` 分支，导致
+`TestNormalizeAntigravityQuotaRowsPreservesLegacyGroupNames/Gemini_4_Argon_Extra` 失败。
+→ 删除 `hasArgon` 分支与重复的 `antigravityGeminiArgonGroupKey` 常量，取上游判据。
+
+**教训：Go 侧除 `go build` 外必须跑 `go test ./...`**，这类归一化逻辑的错误只有测试能发现。
+
+### 上游架构替代、需同步更新测试的 fork 定制
+
+`AntigravityModels`（逐模型接口兜底）在 v2.0.3 迁移中已被 `retrieveUserQuotaSummary`
+取代（第五节已记录），但 `internal/quota/test/config_test.go` 仍按 17 个模板断言，
+长期处于失败状态（合并前即失败）。本次一并修正为 14 个模板并移除 `AntigravityModels` 断言。
+
+### 测试基线（合并后）
+
+- `go test ./...`：通过（除下述已知项）
+- 前端 `npm test`：**1727 passed / 203 files**
+- 前端 `npx tsc --noEmit`、`npm run lint`：通过
+
+前端另有 2 个用例（`CredentialsSection.test.ts` 的 antigravity 分组渲染）在合并前即失败，
+根因是测试的 `t` mock 返回 i18n 键名而非文案，而代码已把分组标题映射到
+`QUOTA_GROUP_LABEL_KEYS`。本次给 mock 补了分组标题映射，使断言重新校验真实渲染结果。
+
+### 环境坑：node_modules 属 root
+
+部署树的 `web/node_modules` 由 root 构建产生，普通用户跑 `npm test` 会因
+`node_modules/.vite-temp` 不可写而 `EACCES`。验证时把 `web/` 复制到可写目录再跑，
+不要为此改部署树权限。

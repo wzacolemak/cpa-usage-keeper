@@ -12,13 +12,13 @@ import quotaCostIcon from '@/assets/icons/quota-cost.svg'
 import quotaTokenIcon from '@/assets/icons/quota-token.svg'
 import styles from './CredentialSections.module.scss'
 import { formatCredentialTimestamp, type CredentialRow, type DisplayQuota, type QuotaResetCardDisplay } from './credentialViewModels'
-import { deleteCredentials, fetchClaudeResetGrants, fetchQuotaAutoRefreshSettings, fetchUsageQuotaResetCredits, setCredentialsDisabled, updateQuotaAutoRefreshSettings, type UsageIdentityPageSort } from '@/lib/api'
+import { deleteCredentials, fetchClaudeResetGrants, fetchQuotaAutoRefreshSettings, fetchUsageQuotaResetCredits, resetUsageQuota, setCredentialsDisabled, updateQuotaAutoRefreshSettings, type UsageIdentityPageSort } from '@/lib/api'
 import type { ClaudeResetGrantsResponse, QuotaAutoRefreshScheduleUnit, QuotaAutoRefreshSettings, UsageQuotaInspectionResult, UsageQuotaInspectionResultStatus, UsageQuotaInspectionStatusResponse, UsageQuotaResetCreditsResponse, UsageQuotaResetResponse } from '@/lib/types'
-import { CredentialAliasEditor } from './CredentialAliasEditor'
+import { CredentialAliasEditor, CredentialEditButton } from './CredentialAliasEditor'
 import { CredentialHealthPanel } from './CredentialHealthPanel'
 import { CredentialSubscriptionBadge } from './CredentialSubscriptionBadge'
 import { CredentialKimiSiteBadge, kimiCredentialSite } from './CredentialKimiSiteBadge'
-import { CredentialRowShell, CredentialSectionShell, CredentialTableHeader, CredentialsPagination, MetricPill, RequestMetric, TonePercent, cacheReadRateTone, capitalize, credentialToneClassName, formatCredentialNumber, successRateTone } from './CredentialSectionShell'
+import { CredentialCardGrid, CredentialCardShell, CredentialSectionShell, CredentialsPagination, MetricPill, RequestMetric, TonePercent, cacheReadRateTone, capitalize, credentialToneClassName, formatCredentialNumber, successRateTone } from './CredentialSectionShell'
 import { CredentialPriorityEditor } from './CredentialPriorityEditor'
 import { ProviderBrandIcon, providerBrandIconKey } from '@/components/ProviderBrandIcon'
 import { CredentialStatusToggle } from './CredentialStatusToggle'
@@ -71,11 +71,15 @@ const CREDENTIAL_EXPIRY_TOOLTIP_VIEWPORT_PADDING = 8
 const QUOTA_ERROR_MESSAGE_MAX_LENGTH = 96
 const QUOTA_ERROR_PARSE_MAX_DEPTH = 10
 const CREDENTIAL_DISPLAY_MODE_STORAGE_KEY = 'cpa.credentials.displayMode'
-	// 提升为共享标题的额度分组；antigravity 按模型组、zcode 按模型/MCP 两类。
-	const QUOTA_GROUP_KEYS = new Set([
+const ANTIGRAVITY_ARGON_GROUP_KEY = 'antigravity-gemini-4-argon'
+// 提升为共享标题的额度分组；antigravity 按模型组、zcode 按模型/MCP 两类。
+// 上游收窄为 antigravity 专用集合（上游无 zcode）；fork 保留 zcode 两个键，
+// 否则前端会整行丢弃 zcode 的额度分组。
+const QUOTA_GROUP_KEYS = new Set([
   'antigravity-gemini-models',
   'antigravity-gemini-4-argon',
   'antigravity-claude-and-gpt-models',
+  ANTIGRAVITY_ARGON_GROUP_KEY,
   'zcode-models',
   'zcode-mcp',
 ])
@@ -149,20 +153,14 @@ export function CredentialsSection({ rows, timeZone, total, page, totalPages, pa
   const { t } = useTranslation()
   const [inspectionOpen, setInspectionOpen] = useState(false)
   const [quotaUsageMode, setQuotaUsageMode] = useState<QuotaUsageMode>('current')
-  const [displayMode, setDisplayModeState] = useState<CredentialDisplayMode>(() => readStoredCredentialDisplayMode())
   const [expiryTooltip, setExpiryTooltip] = useState<CredentialExpiryTooltipState | null>(null)
   const expiryTooltipHoverTargetRef = useRef<CredentialExpiryTooltipTarget | null>(null)
   const expiryTooltipFocusTargetRef = useRef<CredentialExpiryTooltipTarget | null>(null)
-  const showHealthMode = displayMode === 'health'
   const canRefresh = rows.some((row) => !isRowRefreshing(row) && !row.identity.is_deleted) && !quotaRefreshing
   const inspectionTone = inspectionIndicatorTone(quotaInspectionStatus)
   const openInspection = () => {
     setInspectionOpen(true)
     void onRefreshInspectionStatus()
-  }
-  const setDisplayMode = (mode: CredentialDisplayMode) => {
-    setDisplayModeState(mode)
-    persistCredentialDisplayMode(mode)
   }
 
   const positionExpiryTooltip = useCallback((target: CredentialExpiryTooltipTarget | null) => {
@@ -229,7 +227,7 @@ export function CredentialsSection({ rows, timeZone, total, page, totalPages, pa
                 <span className={styles.credentialActiveOnlyThumb} />
               </span>
             </label>
-            <CredentialDisplayModeSwitch mode={displayMode} onChange={setDisplayMode} />
+            {total !== 0 && <QuotaUsageModeSwitch label={t('usage_stats.credentials_quota_usage_mode_label')} mode={quotaUsageMode} onChange={setQuotaUsageMode} />}
           </div>
         )}
         actions={(
@@ -260,17 +258,7 @@ export function CredentialsSection({ rows, timeZone, total, page, totalPages, pa
       {quotaRefreshError && <div className={styles.credentialInlineError}>{quotaRefreshError}</div>}
       {loading && rows.length === 0 && <div className={styles.credentialEmptyState}>{t('common.loading')}</div>}
       {!loading && rows.length === 0 && <div className={styles.credentialEmptyState}>{t('usage_stats.credentials_empty')}</div>}
-      {rows.length > 0 && (
-        <CredentialTableHeader
-          rowClassName={styles.credentialsRow}
-          nameLabel={t('usage_stats.credentials_column_name')}
-          totalRequestsLabel={t('usage_stats.total_requests')}
-          successRateLabel={t('usage_stats.success_rate')}
-          totalTokensLabel={t('usage_stats.total_tokens')}
-          cacheReadRateLabel={t('usage_stats.cache_rate')}
-          sideLabel={showHealthMode ? t('usage_stats.credentials_column_health') : t('usage_stats.credentials_column_quota')}
-        />
-      )}
+      <CredentialCardGrid>
       {rows.map((row) => {
         const rowRefreshing = isRowRefreshing(row)
         const normalizedProvider = row.identity.provider?.trim().toLowerCase() ?? ''
@@ -279,17 +267,20 @@ export function CredentialsSection({ rows, timeZone, total, page, totalPages, pa
         const resetCredits = (isClaude ? row.claudeResetGrants?.availableCount : row.quotaResetCreditsAvailableCount) ?? 0
         const canResetQuota = resetCredits > 0 && !row.identity.is_deleted && !rowRefreshing && !row.quotaResetting
         const rowKey = row.identity.id || row.identity.identity
+        const openDetails = onOpenDetails ? () => onOpenDetails(row) : undefined
         const rowExpiryTooltipText = row.expiresAtLabel
           ? t('usage_stats.credentials_expiry_tooltip', { value: row.expiresAtLabel })
           : ''
         return (
-          <CredentialRowShell
+          <CredentialCardShell
             key={rowKey}
-            icon={(
-              // 凭证 type 直接来自 CPA，可能是不认识的类型；没有品牌图标的类型不给开关，
-              // 否则左侧图标槽位会变成一个看不见却可点、可 Tab 的按钮。
-              providerBrandIconKey(row.identity.type) ? (
+            identityId={rowKey}
+            icon={<ProviderBrandIcon providerType={row.identity.type} size={30} />}
+            status={(
+              // 认证文件沿用品牌类型的现有支持范围，不套用 AI Provider 的能力白名单。
+              providerBrandIconKey(row.identity.type) && (
                 <CredentialStatusToggle
+                  variant="switch"
                   providerType={row.identity.type}
                   displayName={row.displayName}
                   disabled={row.identity.disabled}
@@ -297,31 +288,18 @@ export function CredentialsSection({ rows, timeZone, total, page, totalPages, pa
                   readOnly={row.identity.is_deleted}
                   onToggle={(disabled) => onToggleStatus?.(row.identity.id || row.identity.identity, row.identity.identity, disabled)}
                 />
-              ) : (
-                <ProviderBrandIcon providerType={row.identity.type} size={30} ariaLabel={row.typeLabel} />
               )
             )}
-            title={onEdit ? (
+            title={(
               <CredentialAliasEditor
                 identityId={row.identity.id}
                 displayName={row.displayName}
-
+                showEditButton={false}
                 disabled={row.identity.is_deleted}
-                onOpenDetails={onOpenDetails ? () => onOpenDetails(row) : undefined}
-                onEdit={() => onEdit(row)}
+                onOpenDetails={openDetails}
               />
-            ) : onOpenDetails ? (
-              <button
-                type="button"
-                className={styles.credentialDetailNameButton}
-                data-credential-detail-trigger="true"
-                onClick={() => onOpenDetails(row)}
-              >
-                <span className={styles.credentialDetailNameText}>{row.displayName}</span>
-                <span className={styles.credentialDetailNameArrow} aria-hidden="true">‹</span>
-              </button>
-            ) : <span>{row.displayName}</span>}
-            subtitle={kimiCredentialSite(row.identity.type) || row.subscriptionBadge || row.remainingDaysLabel || row.priorityLabel || (onSavePriority && !row.identity.is_deleted) ? (
+            )}
+            badges={kimiCredentialSite(row.identity.type) || row.subscriptionBadge || row.remainingDaysLabel || row.priorityLabel || (onSavePriority && !row.identity.is_deleted) ? (
               <span className={styles.credentialIdentityBadges}>
                 <CredentialKimiSiteBadge identityType={row.identity.type} />
                 {row.subscriptionBadge && <CredentialSubscriptionBadge model={row.subscriptionBadge} />}
@@ -364,24 +342,31 @@ export function CredentialsSection({ rows, timeZone, total, page, totalPages, pa
                 />
               </span>
             ) : undefined}
-            badges={null}
             metricsTitle={row.identity.stats_reset_at ? t('usage_stats.credentials_stats_since', { time: formatCredentialTimestamp(row.identity.stats_reset_at) ?? row.identity.stats_reset_at }) : undefined}
             metrics={(
               <>
-                <MetricPill value={<RequestMetric total={row.totalRequests} success={row.successCount} failure={row.failureCount} />} />
-                <MetricPill value={<TonePercent value={row.successRate} tone={successRateTone(row.successRate)} />} />
-                <MetricPill value={formatCredentialNumber(row.totalTokens)} />
-                <MetricPill value={<TonePercent value={row.cacheReadRate} tone={cacheReadRateTone(row.cacheReadRate)} />} />
+                <MetricPill label={t('usage_stats.credentials_metric_requests')} value={<RequestMetric total={row.totalRequests} success={row.successCount} failure={row.failureCount} />} />
+                <MetricPill label={t('usage_stats.credentials_metric_success')} value={<TonePercent value={row.successRate} tone={successRateTone(row.successRate)} />} />
+                <MetricPill label={t('usage_stats.credentials_metric_tokens')} value={formatCredentialNumber(row.totalTokens)} />
+                <MetricPill label={t('usage_stats.credentials_metric_cache')} value={<TonePercent value={row.cacheReadRate} tone={cacheReadRateTone(row.cacheReadRate)} />} />
               </>
             )}
-            rowClassName={styles.credentialsRow}
-            side={showHealthMode ? (
-              <CredentialHealthPanel displayName={row.displayName} health={row.credentialHealth} lastUsedAt={row.identity.last_used_at} statsUpdatedAt={row.identity.stats_updated_at} windowCacheReadRate={row.windowCacheReadRate} />
-            ) : (
-              <div className={styles.credentialQuotaSideWithAction}>
-                <CredentialQuotaPanel row={row} quotaUsageMode={quotaUsageMode} timeZone={timeZone} />
-                <div className={styles.credentialQuotaActionStack}>
-                  {/* reset 按钮只在官方缓存给出可用次数时展示；refresh 始终保留在右侧列居中位置。 */}
+            health={<CredentialHealthPanel variant="compact" showCompactMeta displayName={row.displayName} health={row.credentialHealth} lastUsedAt={row.identity.last_used_at} windowCacheReadRate={row.windowCacheReadRate} />}
+            quota={<CredentialQuotaPanel variant="compact" row={row} quotaUsageMode={quotaUsageMode} timeZone={timeZone} />}
+            actions={(
+              <>
+                  {onEdit && <CredentialEditButton identityId={row.identity.id} disabled={row.identity.is_deleted} onEdit={() => onEdit(row)} />}
+                  <button
+                    type="button"
+                    className={`${styles.credentialRowRefreshButton} ${styles.credentialCardActionButton} ${rowRefreshing ? styles.credentialRowRefreshButtonLoading : ''}`.trim()}
+                    onClick={() => void onRefreshQuotaForAuthIndex(row.identity.identity)}
+                    disabled={row.identity.is_deleted || rowRefreshing}
+                    aria-label={t('usage_stats.credentials_refresh_single', { name: row.displayName })}
+                    title={t('usage_stats.credentials_refresh_single', { name: row.displayName })}
+                    aria-busy={rowRefreshing}
+                  >
+                    {rowRefreshing ? <LoadingSpinner size={15} /> : <IconRefreshCw size={15} />}
+                  </button>
                   {resetCredits > 0 && (
                     <QuotaResetAction
                       authIndex={row.identity.identity}
@@ -393,24 +378,13 @@ export function CredentialsSection({ rows, timeZone, total, page, totalPages, pa
                       onConfirm={(grantId, organizationId) => isClaude ? onResetQuotaForAuthIndex(row.identity.identity, grantId, organizationId) : onResetQuotaForAuthIndex(row.identity.identity)}
                     />
                   )}
-                  <button
-                    type="button"
-                    className={`${styles.credentialRowRefreshButton} ${rowRefreshing ? styles.credentialRowRefreshButtonLoading : ''}`.trim()}
-                    onClick={() => void onRefreshQuotaForAuthIndex(row.identity.identity)}
-                    disabled={row.identity.is_deleted || rowRefreshing}
-                    aria-label={t('usage_stats.credentials_refresh_single', { name: row.displayName })}
-                    aria-busy={rowRefreshing}
-                  >
-                    {rowRefreshing ? <LoadingSpinner size={13} /> : <IconRefreshCw size={13} />}
-                  </button>
-                </div>
-              </div>
+              </>
             )}
           />
         )
       })}
+      </CredentialCardGrid>
       <CredentialsPagination
-        leadingControls={showHealthMode ? undefined : <QuotaUsageModeSwitch label={t('usage_stats.credentials_quota_usage_mode_label')} mode={quotaUsageMode} onChange={setQuotaUsageMode} />}
         page={page}
         total={total}
         totalPages={totalPages}
@@ -672,7 +646,7 @@ export function QuotaResetAction({
       <button
         ref={buttonRef}
         type="button"
-        className={`${styles.credentialRowResetButton} ${loading ? styles.credentialRowRefreshButtonLoading : ''}`.trim()}
+        className={`${styles.credentialRowResetButton} ${styles.credentialCardActionButton} ${loading ? styles.credentialRowRefreshButtonLoading : ''}`.trim()}
         onClick={handleToggleOpen}
         disabled={disabled}
         aria-label={t('usage_stats.credentials_quota_reset_button', { count: String(resetCredits) })}
@@ -681,7 +655,7 @@ export function QuotaResetAction({
         aria-expanded={open}
         aria-haspopup="dialog"
       >
-        {loading ? <LoadingSpinner size={13} /> : <IconGaugeReset size={13} />}
+        {loading ? <LoadingSpinner size={15} /> : <IconGaugeReset size={15} />}
       </button>
       {!open && (
         <span id={tooltipId} className={styles.credentialQuotaResetTooltip} role="tooltip">
@@ -1753,8 +1727,9 @@ function isCredentialDisplayMode(value: string | null | undefined): value is Cre
   return value === 'quota' || value === 'health'
 }
 
-export function CredentialQuotaPanel({ row, quotaUsageMode, timeZone, onZcodeAfterReset }: { row: CredentialRow; quotaUsageMode: QuotaUsageMode; timeZone?: string; onZcodeAfterReset?: (authIndex: string) => Promise<void> }) {
+export function CredentialQuotaPanel({ row, quotaUsageMode, timeZone, variant = 'full', onZcodeAfterReset }: { row: CredentialRow; quotaUsageMode: QuotaUsageMode; timeZone?: string; variant?: 'full' | 'compact'; onZcodeAfterReset?: (authIndex: string) => Promise<void> }) {
   const { t } = useTranslation()
+  const compact = variant === 'compact'
 
   // 限额区域按加载、错误、刷新中、无缓存、可展示数据的顺序降级。
   if (row.quotaLoading) {
@@ -1778,13 +1753,14 @@ export function CredentialQuotaPanel({ row, quotaUsageMode, timeZone, onZcodeAft
     return <div className={styles.credentialQuotaStateSlot}><div className={styles.credentialQuotaState}>{t('usage_stats.credentials_quota_unavailable')}</div></div>
   }
 
+  const items = credentialQuotaPanelItems(row.displayQuotas)
   return (
-    <div className={styles.credentialQuotaPanel}>
+    <div className={`${styles.credentialQuotaPanel} ${compact ? styles.credentialQuotaCompact : ''}`.trim()} data-credential-quota-variant={variant}>
       <div className={styles.credentialQuotaBars}>
         {/* 只有 canonical Antigravity 组提升为共享标题；其它 provider 继续沿用原始扁平 QuotaBar。 */}
-        {credentialQuotaPanelItems(row.displayQuotas).map((item) => item.kind === "group"
-          ? <SharedQuotaGroup key={item.renderKey} group={item} quotaUsageMode={quotaUsageMode} timeZone={timeZone} authIndex={row.identity.identity} onAfterReset={onZcodeAfterReset} />
-          : <QuotaBar key={item.quota.key} quota={item.quota} quotaUsageMode={quotaUsageMode} timeZone={timeZone} tooltipAlignRight={item.tooltipAlignRight} />)}
+        {items.map((item, index) => item.kind === 'group'
+          ? <SharedQuotaGroup key={item.renderKey} compact={compact} group={item} quotaUsageMode={quotaUsageMode} timeZone={timeZone} authIndex={row.identity.identity} onAfterReset={onZcodeAfterReset} />
+          : <QuotaBar key={item.quota.key} compact={compact} fullWidth={compact && !item.tooltipAlignRight && items[index + 1]?.kind !== 'quota'} quota={item.quota} quotaUsageMode={quotaUsageMode} timeZone={timeZone} tooltipAlignRight={item.tooltipAlignRight} />)}
       </div>
     </div>
   )
@@ -1837,20 +1813,33 @@ function credentialQuotaPanelItems(quotas: DisplayQuota[]): CredentialQuotaPanel
   return items
 }
 
-function SharedQuotaGroup({ group, quotaUsageMode, timeZone, authIndex, onAfterReset }: { group: SharedQuotaGroupItem; quotaUsageMode: QuotaUsageMode; timeZone?: string; authIndex?: string; onAfterReset?: (authIndex: string) => Promise<void> }) {
+// SharedQuotaGroup 覆盖上游 antigravity 分组渲染，并叠加 fork 的两项能力：
+// 分组标题本地化（QUOTA_GROUP_LABEL_KEYS）、zcode 窗口行内重置按钮。
+// 上游 v2.1.0 将其改名为 AntigravityQuotaGroup 并新增 compact 变体；
+// 这里保留上游名称的语义（只服务提升为共享标题的组）但沿用 fork 的实现。
+function SharedQuotaGroup({ group, quotaUsageMode, timeZone, authIndex, compact = false, onAfterReset }: { group: SharedQuotaGroupItem; quotaUsageMode: QuotaUsageMode; timeZone?: string; authIndex?: string; compact?: boolean; onAfterReset?: (authIndex: string) => Promise<void> }) {
   const { t } = useTranslation()
   // 上游分组名是英文原样；这里映射成本地化标题，未登记的组继续显示上游原文。
   const groupLabelKey = QUOTA_GROUP_LABEL_KEYS[group.groupKey]
   const groupLabel = groupLabelKey ? t(groupLabelKey) : group.groupLabel
+  // argon 组的上游描述是冗余的，与上游保持一致地隐去。
+  const groupDescription = group.groupKey === ANTIGRAVITY_ARGON_GROUP_KEY ? undefined : group.groupDescription
   return (
     <div className={styles.credentialQuotaGroupBlock} data-quota-group={group.groupKey}>
       <div className={styles.credentialQuotaGroupHeader}>
-        <QuotaGroupLabel label={groupLabel} description={group.groupDescription} />
+        <QuotaGroupLabel label={groupLabel} description={groupDescription} />
       </div>
       <div className={styles.credentialQuotaGroupBars}>
-        {group.quotas.map((quota) => (
+        {group.quotas.map((quota, index) => (
           <div key={quota.key} className={quota.resetCard ? styles.credentialQuotaBarWithAction : undefined}>
-            <QuotaBar quota={quota} quotaUsageMode={quotaUsageMode} timeZone={timeZone} showGroupMetadata={false} />
+            <QuotaBar
+              compact={compact}
+              fullWidth={compact && group.quotas.length % 2 === 1 && index === group.quotas.length - 1}
+              quota={quota}
+              quotaUsageMode={quotaUsageMode}
+              timeZone={timeZone}
+              showGroupMetadata={false}
+            />
             {quota.resetCard && authIndex && (
               <ZcodeWindowResetAction authIndex={authIndex} resetCard={quota.resetCard} onAfterReset={onAfterReset} />
             )}
@@ -2151,7 +2140,7 @@ export function formatQuotaBillingUsageAriaLabel(t: Translate, billingUsage: Non
   })
 }
 
-function QuotaBar({ quota, quotaUsageMode, timeZone, showGroupMetadata = true, tooltipAlignRight = false }: { quota: DisplayQuota; quotaUsageMode: QuotaUsageMode; timeZone?: string; showGroupMetadata?: boolean; tooltipAlignRight?: boolean }) {
+function QuotaBar({ quota, quotaUsageMode, timeZone, showGroupMetadata = true, tooltipAlignRight = false, compact = false, fullWidth = false }: { quota: DisplayQuota; quotaUsageMode: QuotaUsageMode; timeZone?: string; showGroupMetadata?: boolean; tooltipAlignRight?: boolean; compact?: boolean; fullWidth?: boolean }) {
   const { t } = useTranslation()
   // 条宽使用剩余额度百分比，颜色跟随剩余风险状态从绿到黄到红。
   const percent = quota.barPercent ?? 0
@@ -2163,7 +2152,7 @@ function QuotaBar({ quota, quotaUsageMode, timeZone, showGroupMetadata = true, t
   const windowUsage = billingUsage ? undefined : quotaWindowUsageForMode(quota, quotaUsageMode)
 
   return (
-    <div className={`${styles.credentialQuotaBarBlock} ${tooltipAlignRight ? styles.credentialQuotaBarTooltipRight : ''}`.trim()}>
+    <div className={`${styles.credentialQuotaBarBlock} ${tooltipAlignRight ? styles.credentialQuotaBarTooltipRight : ''} ${fullWidth ? styles.credentialQuotaWindowFull : ''}`.trim()} data-quota-key={quota.key}>
       <div className={styles.credentialQuotaBarHeader}>
         <span className={`${styles.credentialQuotaLabelGroup} ${quota.usageBreakdown?.length ? styles.credentialQuotaLabelWithInfo : ''}`.trim()}>
           <span>{quota.label}</span>
@@ -2171,12 +2160,14 @@ function QuotaBar({ quota, quotaUsageMode, timeZone, showGroupMetadata = true, t
         </span>
         {(resetDuration || percentLabel) && (
           <span className={styles.credentialQuotaValueGroup}>
-            {resetDuration && <span className={styles.credentialQuotaResetDuration}>{resetDuration}</span>}
+            {resetDuration && (compact && resetLabel
+              ? <QuotaResetCountdown duration={resetDuration} resetLabel={resetLabel} />
+              : <span className={styles.credentialQuotaResetDuration}>{resetDuration}</span>)}
             {percentLabel && <strong>{percentLabel}</strong>}
           </span>
         )}
       </div>
-      {!(quota.usageBreakdown?.length && quota.barPercent === null) && <div className={styles.credentialQuotaTrack}>
+      {!(quota.usageBreakdown?.length && quota.barPercent === null) && <div className={styles.credentialQuotaTrack} data-quota-bar="true">
         <span className={`${styles.credentialQuotaFill} ${credentialToneClassName('credentialQuotaFill', quota.status)}`.trim()} style={{ width }} />
       </div>}
       <div className={styles.credentialQuotaMeta}>
@@ -2203,10 +2194,53 @@ function QuotaBar({ quota, quotaUsageMode, timeZone, showGroupMetadata = true, t
             </span>
           </strong>
         )}
-        {resetLabel && <span className={styles.credentialQuotaResetTime}>{resetLabel}</span>}
+        {!compact && resetLabel && <span className={styles.credentialQuotaResetTime}>{resetLabel}</span>}
       </div>
     </div>
   )
+}
+
+function QuotaResetCountdown({ duration, resetLabel }: { duration: string; resetLabel: string }) {
+  const { t } = useTranslation()
+  const tooltipId = useId()
+  const anchorRef = useRef<HTMLButtonElement>(null)
+  const { tooltip, showOnMouseEnter, hideOnMouseLeave, showOnFocus, hideOnBlur, dismiss } = usePortalTooltip({ trackAnchor: true })
+  const label = t('usage_stats.credentials_quota_resets_at', { time: resetLabel.replace('/', '-') })
+  const lines = [label]
+
+  useEffect(() => {
+    if (!tooltip) return
+    const closeOutside = (event: PointerEvent) => {
+      if (!anchorRef.current?.contains(event.target as Node)) dismiss()
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') dismiss()
+    }
+    document.addEventListener('pointerdown', closeOutside)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [tooltip, dismiss])
+
+  return <>
+    <button
+      ref={anchorRef}
+      type="button"
+      className={`${styles.credentialQuotaResetDuration} ${styles.credentialQuotaCountdown}`}
+      data-quota-reset-countdown="true"
+      aria-label={label}
+      aria-describedby={tooltip ? tooltipId : undefined}
+      onMouseEnter={(event) => showOnMouseEnter(lines, event.currentTarget)}
+      onMouseLeave={(event) => hideOnMouseLeave(event.currentTarget)}
+      onFocus={(event) => showOnFocus(lines, event.currentTarget)}
+      onBlur={(event) => hideOnBlur(event.currentTarget)}
+      onClick={(event) => showOnFocus(lines, event.currentTarget)}
+    >{duration}</button>
+    {/* 文本始终使用当前额度快照；悬停期间刷新不会留下旧重置时间。 */}
+    <PortalTooltip tooltip={tooltip ? { ...tooltip, lines } : null} id={tooltipId} />
+  </>
 }
 
 function QuotaUsageBreakdownInfo({ quota }: { quota: DisplayQuota }) {
